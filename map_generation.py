@@ -6,21 +6,10 @@ from random import randint, uniform, normalvariate, random
 import sklearn
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 import threading
+import time
 
-# cart_lidar_frame = np.zeros([2, N], dtype=float)
-# polar_lidar_frame = np.zeros([2, N], dtype=float)
-# # dists = np.zeros([N], dtype=float)
-# pntsBuf = np.zeros([3, N], dtype=float)
-# pntsPhi = np.zeros([N], dtype=float)
+from Bot import Bot
 
-class Bot:
-    def __init__(self):
-        self.radius = 0.2
-        self.x = 0.0
-        self.y = 0.0
-        self.dir = 0.0
-        self.lin_vel = 0.0
-        self.ang_vel = 0.0
 
 def create_scene():
     contours = []
@@ -126,11 +115,20 @@ def get_lidar_frame(bot, contours, N, noise_std=0.1, lidar_angle=(pi - 0.001)):
         if isinf(dists[i]):
             cart_lidar_frame[0, i] = 0.0
             cart_lidar_frame[1, i] = 0.0
-        else: 
+        else:
             cart_lidar_frame[0, i] = (dists[i] + dist_noise) * cos(beam_angle_0 - d_ang * i)
             cart_lidar_frame[1, i] = (dists[i] + dist_noise) * sin(beam_angle_0 - d_ang * i)
 
     return cart_lidar_frame
+
+
+def add_frame_to_map(map, bot, lidar_frame):
+    B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
+                        [sin(radians(bot.dir - 90)), cos(radians(bot.dir - 90)), bot.y],
+                        [0, 0, 1]], dtype=float)
+    lidar_frame_B2W = B2W_T @ lidar_frame
+    map.append(lidar_frame_B2W)
+
 
 def maintain_clustering(lidar_frame):
     # model = AgglomerativeClustering(n_clusters=None, linkage='single', distance_threshold=0.8)
@@ -164,6 +162,52 @@ def get_surrounding_objects(lidar_frame, clust_output):
 
     return objects
 
+def wait_for_bot_data(bot):
+    while not bot.ready:
+        time.sleep(0.001)
+    bot.data_sent = True
+
+def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps):
+    ax.clear()
+    for cnt in contours:
+        ax.plot(*cnt)
+
+    bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
+    bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
+                              bot.y - 0.01 * sin(radians(bot.dir))),
+                             bot.radius, 0.02,
+                             angle=bot.dir, rotation_point='xy', color='black')
+
+    ax.add_patch(bot_img)
+    ax.add_patch(bot_nose)
+
+    motion = threading.Thread(target=bot.move_to_pnt, args=(x_goal, y_goal, dir_goal, lin_vel, fps))
+    motion.start()
+
+    while not bot.goal_reached:
+        wait_for_bot_data(bot)
+        bot_img.remove()
+        bot_nose.remove()
+        bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
+        ax.add_patch(bot_img)
+        bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
+                                  bot.y - 0.01 * sin(radians(bot.dir))),
+                                 bot.radius, 0.02,
+                                 angle=bot.dir, rotation_point='xy', color='black')
+        ax.add_patch(bot_nose)
+
+        lidar_ax.clear()
+        frame = get_lidar_frame(bot, contours, N, noise_std)
+        add_frame_to_map(map, bot, frame)
+        lidar_ax.scatter(frame[0, :], frame[1, :], s=5, marker='o', color='gray')
+        lidar_ax.scatter([0.0], [0.0], s=7, marker='o', color='red')
+
+        plt.draw()
+        plt.pause(1/fps)
+
+    # motion.join()
+
+map = []
 
 N = 200
 noise_std = 0.1
@@ -175,10 +219,6 @@ ax.set_aspect('equal')
 
 lidar_fig, lidar_ax = plt.subplots()
 lidar_ax.set_aspect('equal')
-lidar_ax.set(xlim=(-10, 10), ylim=(-10, 10))
-
-obj_fig, obj_ax = plt.subplots()
-obj_ax.set_aspect('equal')
 
 contours = create_scene()
 
@@ -187,47 +227,58 @@ contours = create_scene()
 # bot.dir = 15.0
 # bot.lin_vel = 0.5
 
-bot.x = 0
-bot.y = 0
-bot.dir = 135
+# bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
+# bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
+#                               bot.y - 0.01 * sin(radians(bot.dir))),
+#                              bot.radius, 0.02,
+#                              angle=bot.dir, rotation_point='xy', color='black')
+# ax.add_patch(bot_img)
+# ax.add_patch(bot_nose)
+#
+# for cnt in contours:
+#     ax.plot(*cnt)
 
-n_episodes = 1000
-dt = 0.5
+p2p_motion(-3, 4, 0, 1, 10)
+p2p_motion(-3, -4.2, 0, 1, 10)
+p2p_motion(4, -3, 0, 1, 10)
+p2p_motion(2, 0, 0, 1, 10)
+p2p_motion(0, 0, 0, 1, 10)
 
-for cnt in contours:
-    ax.plot(*cnt)
+# for p in range(n_episodes):
+#     bot_img.remove()
+#     bot_nose.remove()
+#     bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
+#     ax.add_patch(bot_img)
+#     bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
+#                               bot.y - 0.01 * sin(radians(bot.dir))),
+#                              bot.radius, 0.02,
+#                              angle=bot.dir, rotation_point='xy', color='black')
+#     ax.add_patch(bot_nose)
+#
+#     lidar_ax.clear()
+#     frame = get_lidar_frame(bot, contours, N, noise_std)
+#     add_frame_to_map(map, bot, frame)
+#     # clustered = maintain_clustering(frame)
+#     # obj = get_surrounding_objects(frame, clustered)
+#     # for o in obj:
+#     #     obj_ax.scatter(o[0, :], o[1, :], s=5, marker='o', color='gray')
+#     # print(obj)
+#     # print(clustered.labels_)
+#     # print(len(set(clustered.labels_)))
+#     lidar_ax.scatter(frame[0, :], frame[1, :], s=5, marker='o', color='gray')
+#     # lidar_ax.scatter(frame[0, :], frame[1, :], s=5, c=clustered.labels_, cmap='tab10')
+#     lidar_ax.scatter([0.0], [0.0], s=7, marker='o', color='red')
+#
+#     plt.draw()
+#     plt.pause(dt)
+#
+#     bot.x += bot.lin_vel * dt * cos(radians(bot.dir))
+#     bot.y += bot.lin_vel * dt * sin(radians(bot.dir))
+#     # bot.dir += 1.2
+#     bot.dir += 3.5
 
-for p in range(n_episodes):
-    # bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
-    # ax.add_patch(bot_img)
-    # bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
-    #                           bot.y - 0.01 * sin(radians(bot.dir))),
-    #                          bot.radius, 0.02,
-    #                          angle=bot.dir, rotation_point='xy', color='black')
-    # ax.add_patch(bot_nose)
-
-    lidar_ax.clear()
-    obj_ax.clear()
-    frame = get_lidar_frame(bot, contours, N, noise_std)
-    clustered = maintain_clustering(frame)
-    obj = get_surrounding_objects(frame, clustered)
-    for o in obj:
-        obj_ax.scatter(o[0, :], o[1, :], s=5, marker='o', color='gray')
-    # print(obj)
-    # print(clustered.labels_)
-    # print(len(set(clustered.labels_)))
-    # lidar_ax.scatter(frame[0, :], frame[1, :], s=5, marker='o', color='gray')
-    lidar_ax.scatter(frame[0, :], frame[1, :], s=5, c=clustered.labels_, cmap='tab10')
-    lidar_ax.scatter([0.0], [0.0], s=7, marker='o', color='red')
-
-    plt.draw()
-    plt.pause(dt)
-    # bot_img.remove()
-    # bot_nose.remove()
-
-    bot.x += bot.lin_vel * dt * cos(radians(bot.dir))
-    bot.y += bot.lin_vel * dt * sin(radians(bot.dir))
-    # bot.dir += 1.2
-    bot.dir += 3.5
-
+map_fig, map_ax = plt.subplots()
+map_ax.set_aspect('equal')
+for fr in map:
+    map_ax.scatter(fr[0, :], fr[1, :], s=1, marker='o', color='gray')
 plt.show()
