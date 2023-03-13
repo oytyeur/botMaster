@@ -7,8 +7,10 @@ import sklearn
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 import threading
 import time
+import csv
 
 from Bot import Bot
+from vectorization import getLines
 
 
 def create_scene():
@@ -28,7 +30,8 @@ def get_lidar_frame(bot, contours, N, noise_std=0.1, lidar_angle=(pi - 0.001)):
     beam_angle_0 = (lidar_angle + pi) / 2
     cart_lidar_frame = np.zeros([3, N], dtype=float)
     cart_lidar_frame[2, :] = 1
-    # polar_lidar_frame[:,:] = 0.0
+    polar_lidar_frame = np.zeros([3, N], dtype=float)
+    polar_lidar_frame[2, :] = 1
     dists = np.zeros([N], dtype=float)
     dists[:] = inf
     # seg_angles = np.zeros([2], dtype=float)
@@ -36,9 +39,6 @@ def get_lidar_frame(bot, contours, N, noise_std=0.1, lidar_angle=(pi - 0.001)):
     B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
                         [sin(radians(bot.dir - 90)), cos(radians(bot.dir - 90)), bot.y],
                         [0, 0, 1]], dtype=float)
-    # W2B_T = np.asarray([[cos(radians(bot.dir - 90)), sin(radians(bot.dir - 90)), -bot.y],
-    #                     [-sin(radians(bot.dir- 90)), cos(radians(bot.dir - 90)), -bot.x],
-    #                     [0, 0, 1]], dtype=float)
     W2B_T = inv(B2W_T)
 
     for cnt in contours:
@@ -68,24 +68,7 @@ def get_lidar_frame(bot, contours, N, noise_std=0.1, lidar_angle=(pi - 0.001)):
             seg_angles = np.zeros([2], dtype=float)
             seg_angles[0] = atan2(seg_st_W2B[1], seg_st_W2B[0])
             seg_angles[1] = atan2(seg_end_W2B[1], seg_end_W2B[0])
-            # if seg_angles[0] < 0 and seg_angles[1] < 0:
-            #     continue
             seg_angles.sort()
-            # for c, ang in enumerate(seg_angles):
-            #     if ang < 0:
-            # if seg_angles[0] < 0:
-            #     if seg_angles[1] < pi/2:
-            #         seg_angles[0] = (lidar_angle - pi) / 2
-            #     elif seg_angles[1] > pi/2:
-            #         seg_angles[0] = (lidar_angle + pi) / 2
-            #     else:
-            #         if seg_angles[0] < -pi/2:
-            #             seg_angles[0] = (lidar_angle + pi) / 2
-            #         elif seg_angles[0] > -pi/2:
-            #             seg_angles[0] = (lidar_angle - pi) / 2
-            #         else:
-            #             raise Exception()
-            #     seg_angles.sort()
 
             for j in range(N):
                 beam_angle = beam_angle_0 - d_ang * j
@@ -111,23 +94,51 @@ def get_lidar_frame(bot, contours, N, noise_std=0.1, lidar_angle=(pi - 0.001)):
                 else:
                     continue
     for i in range(N):
-        dist_noise = normalvariate(0.0, noise_std / 3)
+        dist_noise = normalvariate(0.0, noise_std / 15)
         if isinf(dists[i]):
             cart_lidar_frame[0, i] = 0.0
             cart_lidar_frame[1, i] = 0.0
+            polar_lidar_frame[0, i] = beam_angle_0 + i * d_ang
+            polar_lidar_frame[1, i] = 0.0
         else:
             cart_lidar_frame[0, i] = (dists[i] + dist_noise) * cos(beam_angle_0 - d_ang * i)
             cart_lidar_frame[1, i] = (dists[i] + dist_noise) * sin(beam_angle_0 - d_ang * i)
+            polar_lidar_frame[0, i] = beam_angle_0 + i * d_ang
+            polar_lidar_frame[1, i] = dists[i]
 
-    return cart_lidar_frame
+    return cart_lidar_frame, polar_lidar_frame
 
 
-def add_frame_to_map(map, bot, lidar_frame):
+def update_map(map, bot, lidar_frame, initial, prev_lidar_frame_B2W=None, threshold=0.05):
     B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
                         [sin(radians(bot.dir - 90)), cos(radians(bot.dir - 90)), bot.y],
                         [0, 0, 1]], dtype=float)
     lidar_frame_B2W = B2W_T @ lidar_frame
-    map.append(lidar_frame_B2W)
+    frame_to_append = []
+    if not initial:
+        frame_to_append = np.zeros([3, lidar_frame.shape[1]], dtype=float)
+        count = 0
+        for i in range(lidar_frame_B2W.shape[1]):
+            j = 0
+            while j < prev_lidar_frame_B2W.shape[1]:
+                if sqrt((lidar_frame_B2W[0, i] - prev_lidar_frame_B2W[0, j]) ** 2 +
+                        (lidar_frame_B2W[1, i] - prev_lidar_frame_B2W[1, j]) ** 2) < threshold:
+                    break
+                else:
+                    j += 1
+            if j == prev_lidar_frame_B2W.shape[1]:
+                frame_to_append[:, count] = lidar_frame_B2W[:, i]
+                count += 1
+        if count == 0:
+            return lidar_frame_B2W
+    else:
+        frame_to_append = lidar_frame_B2W
+        count = lidar_frame_B2W.shape[1]
+
+    map.append(frame_to_append[:, :count])
+    # print(count)
+
+    return lidar_frame_B2W
 
 
 def maintain_clustering(lidar_frame):
@@ -137,6 +148,7 @@ def maintain_clustering(lidar_frame):
     model.fit(data)
 
     return model
+
 
 def get_surrounding_objects(lidar_frame, clust_output):
     objects = []  # сохраняются в виде среза с кадра данных лидара
@@ -162,12 +174,49 @@ def get_surrounding_objects(lidar_frame, clust_output):
 
     return objects
 
+
+def detect_unfamiliar_object(map, bot, objects):
+    unfamiliar_objects = []
+    B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
+                        [sin(radians(bot.dir - 90)), cos(radians(bot.dir - 90)), bot.y],
+                        [0, 0, 1]], dtype=float)
+    # for object in objects:
+    #     obj_B2W = B2W_T @ object
+    #     xmin, ymin = np.min(obj_B2W[0, :]), np.min(obj_B2W[1, :])
+    #     xmax, ymax = np.max(obj_B2W[0, :]), np.max(obj_B2W[1, :])
+        # TODO: добавить выделение области на карте и проверка каждого объеката на наличие в этой области
+    return objects[0]
+
+
+def save_map(map):
+    with open('map.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile, delimiter=' ')
+        for frame in map:
+            frame_T = frame.T
+            for pt in frame_T:
+                writer.writerow(pt)
+
+
+def read_map(file_name='map.csv'):
+    # map = np.zeros([1, 3])
+    # with open(file_name, newline='') as csvfile:
+    #     reader = csv.reader(csvfile, delimiter='')
+    #     for row in reader:
+    #         if map.shape[0] > 1:
+    #             map = np.append(map, )
+    map = np.genfromtxt(file_name, dtype=float, delimiter=' ')
+    return map
+
+
 def wait_for_bot_data(bot):
     while not bot.ready:
         time.sleep(0.001)
     bot.data_sent = True
 
-def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps):
+
+def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, mapping=True):
+    global prev_frame
+
     ax.clear()
     for cnt in contours:
         ax.plot(*cnt)
@@ -197,10 +246,26 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps):
         ax.add_patch(bot_nose)
 
         lidar_ax.clear()
-        frame = get_lidar_frame(bot, contours, N, noise_std)
-        add_frame_to_map(map, bot, frame)
+        frame, _ = get_lidar_frame(bot, contours, N, noise_std)
+
+        clustered = maintain_clustering(frame)
+        objects = get_surrounding_objects(frame, clustered)
+        obstacle = detect_unfamiliar_object(map, bot, objects)
+
+        lines = np.zeros([2, obstacle.shape[1]])
+        Nlines = getLines(lines, obstacle, obstacle.shape[1], tolerance=0.25)
+        if mapping:
+            # add_frame_to_map(map, bot, frame)
+            if not map:
+                prev_frame = update_map(map, bot, frame, True)
+            else:
+                prev_frame = update_map(map, bot, frame, False, prev_lidar_frame_B2W=prev_frame, threshold=0.025)
+
         lidar_ax.scatter(frame[0, :], frame[1, :], s=5, marker='o', color='gray')
+        # lidar_ax.scatter(frame[0, :], frame[1, :], s=5, c=clustered.labels_, cmap='tab10')
         lidar_ax.scatter([0.0], [0.0], s=7, marker='o', color='red')
+        for i in range(Nlines):
+            lidar_ax.plot([lines[0, i], lines[0, i + 1]], [lines[1, i], lines[1, i + 1]], linewidth=2)
 
         plt.draw()
         plt.pause(1/fps)
@@ -211,6 +276,7 @@ map = []
 
 N = 200
 noise_std = 0.1
+prev_frame = np.zeros([3, N], dtype=float)
 
 bot = Bot()
 
@@ -222,63 +288,46 @@ lidar_ax.set_aspect('equal')
 
 contours = create_scene()
 
-# bot.x = 0
-# bot.y = -4
-# bot.dir = 15.0
-# bot.lin_vel = 0.5
-
-# bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
-# bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
-#                               bot.y - 0.01 * sin(radians(bot.dir))),
-#                              bot.radius, 0.02,
-#                              angle=bot.dir, rotation_point='xy', color='black')
-# ax.add_patch(bot_img)
-# ax.add_patch(bot_nose)
-#
-# for cnt in contours:
-#     ax.plot(*cnt)
-
 p2p_motion(-3, 4, 0, 1, 10)
 p2p_motion(-3, -4.2, 0, 1, 10)
 p2p_motion(4, -3, 0, 1, 10)
-p2p_motion(2, 0, 0, 1, 10)
+p2p_motion(3.8, 0, 0, 1, 10)
 p2p_motion(0, 0, 0, 1, 10)
 
-# for p in range(n_episodes):
-#     bot_img.remove()
-#     bot_nose.remove()
-#     bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
-#     ax.add_patch(bot_img)
-#     bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
-#                               bot.y - 0.01 * sin(radians(bot.dir))),
-#                              bot.radius, 0.02,
-#                              angle=bot.dir, rotation_point='xy', color='black')
-#     ax.add_patch(bot_nose)
+# save_map(map)
+
+# ax.clear()
+# for cnt in contours:
+#     ax.plot(*cnt)
 #
-#     lidar_ax.clear()
-#     frame = get_lidar_frame(bot, contours, N, noise_std)
-#     add_frame_to_map(map, bot, frame)
-#     # clustered = maintain_clustering(frame)
-#     # obj = get_surrounding_objects(frame, clustered)
-#     # for o in obj:
-#     #     obj_ax.scatter(o[0, :], o[1, :], s=5, marker='o', color='gray')
-#     # print(obj)
-#     # print(clustered.labels_)
-#     # print(len(set(clustered.labels_)))
-#     lidar_ax.scatter(frame[0, :], frame[1, :], s=5, marker='o', color='gray')
-#     # lidar_ax.scatter(frame[0, :], frame[1, :], s=5, c=clustered.labels_, cmap='tab10')
-#     lidar_ax.scatter([0.0], [0.0], s=7, marker='o', color='red')
+# bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
+# bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
+#                           bot.y - 0.01 * sin(radians(bot.dir))),
+#                          bot.radius, 0.02,
+#                          angle=bot.dir, rotation_point='xy', color='black')
 #
-#     plt.draw()
-#     plt.pause(dt)
+# ax.add_patch(bot_img)
+# ax.add_patch(bot_nose)
 #
-#     bot.x += bot.lin_vel * dt * cos(radians(bot.dir))
-#     bot.y += bot.lin_vel * dt * sin(radians(bot.dir))
-#     # bot.dir += 1.2
-#     bot.dir += 3.5
+# frame, _ = get_lidar_frame(bot, contours, N, noise_std)
+#
+# clustered = maintain_clustering(frame)
+# objects = get_surrounding_objects(frame, clustered)
+# obstacle = detect_unfamiliar_object(objects)
+#
+# lines = np.zeros([2, obstacle.shape[1]])
+# Nlines = getLines(lines, obstacle, obstacle.shape[1], tolerance=0.25)
+#
+# # lidar_ax.scatter(frame[0, :], frame[1, :], s=5, marker='o', color='gray')
+# lidar_ax.scatter(frame[0, :], frame[1, :], s=5, c=clustered.labels_, cmap='rainbow')
+# lidar_ax.scatter([0.0], [0.0], s=7, marker='o', color='red')
+
+map_from_file = read_map('map.csv').T
 
 map_fig, map_ax = plt.subplots()
 map_ax.set_aspect('equal')
-for fr in map:
-    map_ax.scatter(fr[0, :], fr[1, :], s=1, marker='o', color='gray')
+# for fr in map:
+#     map_ax.scatter(fr[0, :], fr[1, :], s=1, marker='o', color='gray')
+map_ax.scatter(map_from_file[0, :], map_from_file[1, :], s=1, marker='o', color='gray')
+
 plt.show()

@@ -19,6 +19,7 @@ class Bot:
             time.sleep(0.001)
         self.data_sent = False
 
+
     def cmd_vel(self, lin_vel, ang_vel):
         self.lin_vel = lin_vel
         self.ang_vel = ang_vel
@@ -26,12 +27,6 @@ class Bot:
     def move_to_pnt(self, x_g, y_g, dir_g, lin_vel, fps):
         self.goal_reached = False
         dt = 1/fps
-        # if x_g == self.x:
-        #     if y_g < self.y:
-        #         path_dir = -90
-        #     elif y_g > self.y:
-        #         path_dir = 90
-        # else:
         path_dir = degrees(atan2(y_g - self.y, x_g - self.x))
         self.cmd_vel(0.0, 60.0)
         while not self.dir == path_dir:
@@ -40,6 +35,7 @@ class Bot:
 
             if self.dir > 0 and path_dir < 0:
                 path_dir += 360
+
             if not path_dir - self.dir > self.ang_vel * dt:
                 if path_dir > 180:
                     path_dir -= 360
@@ -72,6 +68,7 @@ class Bot:
         #         self.dir = dir_g
         #     else:
         #         self.dir += self.ang_vel * dt
+
         self.goal_reached = True
         self.ready = True
         self.data_sent = False
