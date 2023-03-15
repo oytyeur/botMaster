@@ -18,7 +18,7 @@ def create_scene():
     room = np.asarray([[5, -5, -5, 5, 5], [5, 5, -5, -5, 5]], dtype=float)
     contours.append(room)
 
-    obst_1 = np.asarray([[0.5, 2, 2, 0.5, 0.5], [2, 2, 4.8, 4.8, 2]], dtype=float)
+    obst_1 = np.asarray([[0.5, 2, 2, 0.5, 0.5], [2, 2, 4.49, 4.49, 2]], dtype=float)
     obst_2 = np.asarray([[-2, 0, 1, 0, -2, -2], [0, -1, -1, -2, -2, 0]], dtype=float)
     contours.append(obst_1)
     contours.append(obst_2)
@@ -141,10 +141,20 @@ def update_map(map, bot, lidar_frame, initial, prev_lidar_frame_B2W=None, thresh
     return lidar_frame_B2W
 
 
-def maintain_clustering(lidar_frame):
+# def process_map(map):
+    # TODO: мистический метод, в котором
+    # 1. Проводится кластеризацию по контурам
+    # 2. Точки в кластере сортируются по полярным углам ибо в текущей карте они неупорядочены
+    # 3. Отсортированные контура векторизуются до ломаных
+    # 4. Возвращаются контуры карты в виде ломаных
+    # Это нужно для того, чтобы определять незнакомость объектов на лидаре не по точкам карты,
+    # а по расстояниям до отрезков контуров на ней
+
+
+def maintain_clustering(frame, eps=0.25, min_samples=2):
     # model = AgglomerativeClustering(n_clusters=None, linkage='single', distance_threshold=0.8)
-    model = DBSCAN(eps=0.5, min_samples=3)
-    data = lidar_frame[:2, ].T
+    model = DBSCAN(eps=eps, min_samples=min_samples)
+    data = frame[:2, ].T
     model.fit(data)
 
     return model
@@ -168,24 +178,63 @@ def get_surrounding_objects(lidar_frame, clust_output):
                 if not ind < len(clusters_inds):
                     break
             to = ind
-            objects.append(lidar_frame[:2, fr:to])
+            objects.append(lidar_frame[:3, fr:to])
         if not ind < len(clusters_inds):
             break
 
     return objects
 
 
-def detect_unfamiliar_object(map, bot, objects):
+def detect_unfamiliar_objects(map, bot, objects, threshold=0.1):
+    expansion = 0.025
+    rois = []
     unfamiliar_objects = []
     B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
                         [sin(radians(bot.dir - 90)), cos(radians(bot.dir - 90)), bot.y],
                         [0, 0, 1]], dtype=float)
-    # for object in objects:
-    #     obj_B2W = B2W_T @ object
-    #     xmin, ymin = np.min(obj_B2W[0, :]), np.min(obj_B2W[1, :])
-    #     xmax, ymax = np.max(obj_B2W[0, :]), np.max(obj_B2W[1, :])
+    trans_map = map.T
+    for object in objects:
+        obj_B2W = B2W_T @ object
+        xmin, ymin = np.min(obj_B2W[0, :]) - expansion, np.min(obj_B2W[1, :]) - expansion
+        xmax, ymax = np.max(obj_B2W[0, :]) + expansion, np.max(obj_B2W[1, :]) + expansion
+        ind1 = np.all(trans_map[:, :2] >= np.array([xmin, ymin]), axis=1)
+        ind2 = np.all(trans_map[:, :2] <= np.array([xmax, ymax]), axis=1)
+
+        map_roi = trans_map[np.logical_and(ind1, ind2)].T
+        # rois.append(map_roi)
+
+        if map_roi.size == 0:
+            unfamiliar_objects.append(object)
+        else:
+            # print("OBJECT", object, object.shape)
+            # print("ROI", map_roi, map_roi.shape)
+            count = 0
+            new_obj = np.zeros([3, obj_B2W.shape[1]], dtype=float)
+            new_obj[2, :] = 1.0
+            for i in range(obj_B2W.shape[1]):
+                j = 0
+                while j < map_roi.shape[1]:
+                    if sqrt((obj_B2W[0, i] - map_roi[0, j]) ** 2 + (obj_B2W[1, i] - map_roi[1, j]) ** 2) < threshold:
+                        break
+                    else:
+                        j += 1
+
+                if j == map_roi.shape[1]:
+                    new_obj[:2, count] = obj_B2W[:2, i]
+                    count += 1
+                elif count > 0:
+                    unfamiliar_objects.append(inv(B2W_T) @ new_obj[:, :count])
+                    count = 0
+            if count > 0:
+                unfamiliar_objects.append(inv(B2W_T) @ new_obj[:, :count])
+
+            # if count > 0:
+            #     unfamiliar_objects.append(new_obj[:, :count])
+
         # TODO: добавить выделение области на карте и проверка каждого объеката на наличие в этой области
-    return objects[0]
+        # print(len(unfamiliar_objects))
+    return unfamiliar_objects
+    # return rois
 
 
 def save_map(map):
@@ -198,14 +247,8 @@ def save_map(map):
 
 
 def read_map(file_name='map.csv'):
-    # map = np.zeros([1, 3])
-    # with open(file_name, newline='') as csvfile:
-    #     reader = csv.reader(csvfile, delimiter='')
-    #     for row in reader:
-    #         if map.shape[0] > 1:
-    #             map = np.append(map, )
     map = np.genfromtxt(file_name, dtype=float, delimiter=' ')
-    return map
+    return map.T
 
 
 def wait_for_bot_data(bot):
@@ -247,34 +290,43 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, mapping=True):
 
         lidar_ax.clear()
         frame, _ = get_lidar_frame(bot, contours, N, noise_std)
+        lidar_ax.scatter(frame[0, :], frame[1, :], s=4, marker='o', color='gray')
+        lidar_ax.scatter([0.0], [0.0], s=10, marker='o', color='red')
 
-        clustered = maintain_clustering(frame)
-        objects = get_surrounding_objects(frame, clustered)
-        obstacle = detect_unfamiliar_object(map, bot, objects)
-
-        lines = np.zeros([2, obstacle.shape[1]])
-        Nlines = getLines(lines, obstacle, obstacle.shape[1], tolerance=0.25)
         if mapping:
             # add_frame_to_map(map, bot, frame)
             if not map:
                 prev_frame = update_map(map, bot, frame, True)
             else:
-                prev_frame = update_map(map, bot, frame, False, prev_lidar_frame_B2W=prev_frame, threshold=0.025)
+                prev_frame = update_map(map, bot, frame, False, prev_lidar_frame_B2W=prev_frame, threshold=0.1)
 
-        lidar_ax.scatter(frame[0, :], frame[1, :], s=5, marker='o', color='gray')
-        # lidar_ax.scatter(frame[0, :], frame[1, :], s=5, c=clustered.labels_, cmap='tab10')
-        lidar_ax.scatter([0.0], [0.0], s=7, marker='o', color='red')
-        for i in range(Nlines):
-            lidar_ax.plot([lines[0, i], lines[0, i + 1]], [lines[1, i], lines[1, i + 1]], linewidth=2)
+        else:
+            clustered = maintain_clustering(frame)
+            objects = get_surrounding_objects(frame, clustered)
+            obstacles = detect_unfamiliar_objects(map_from_file, bot, objects, threshold=0.1)
+
+            for obst in obstacles:
+                lidar_ax.scatter(obst[0, :], obst[1, :], s=10, marker='o', color='magenta')
+            for obstacle in obstacles:
+                lines = np.zeros([2, obstacle.shape[1]])
+                Nlines = getLines(lines, obstacle, obstacle.shape[1], tolerance=0.1)
+                for i in range(Nlines):
+                    lidar_ax.plot([lines[0, i], lines[0, i + 1]], [lines[1, i], lines[1, i + 1]], linewidth=2)
 
         plt.draw()
         plt.pause(1/fps)
 
     # motion.join()
 
+
+# TODO: добавить отдельный класс для лидара
+
+# TODO: перестроить карту - чтобы было без пробелов или уже добить кластеризацию контуров и
+#  работать уже с полигональной картой
+
 map = []
 
-N = 200
+N = 300
 noise_std = 0.1
 prev_frame = np.zeros([3, N], dtype=float)
 
@@ -287,16 +339,40 @@ lidar_fig, lidar_ax = plt.subplots()
 lidar_ax.set_aspect('equal')
 
 contours = create_scene()
+contours.append(np.asarray([[-4, -4, -3, -3, -4], [4, 3, 3, 4, 4]], dtype=float))
+contours.append(np.asarray([[0, -0.5, -0.5, 0, 0], [4, 4, 3.5, 3.5, 4]], dtype=float))
+contours.append(np.asarray([[-4, -4.5, -4.5, -4, -4], [0, 0, 0.5, 0.5, 0]], dtype=float))
+contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [3, 3, 4, 4, 3]], dtype=float))
+contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [-3, -3, -4, -4, -3]], dtype=float))
+contours.append(np.asarray([[4, 3.5, 3.5, 4, 4], [-4, -4, -4.5, -4.5, -4]], dtype=float))
+contours.append(np.asarray([[-1, 0, 0.5, -1], [-4.7, -4.3, -4.5, -4.7]], dtype=float))
 
-p2p_motion(-3, 4, 0, 1, 10)
-p2p_motion(-3, -4.2, 0, 1, 10)
-p2p_motion(4, -3, 0, 1, 10)
-p2p_motion(3.8, 0, 0, 1, 10)
-p2p_motion(0, 0, 0, 1, 10)
+map_from_file = read_map('map.csv')
 
+
+
+p2p_motion(-2, 4, 0, 1, 10, mapping=False)
+p2p_motion(-3, -4.2, 0, 1, 10, mapping=False)
+p2p_motion(4, -3, 0, 1, 10, mapping=False)
+p2p_motion(3.8, 0, 0, 1, 10, mapping=False)
+p2p_motion(0, 0, 0, 1, 10, mapping=False)
+
+# p2p_motion(-2, 4, 0, 1, 10)
+# p2p_motion(-3, -4.2, 0, 1, 10)
+# p2p_motion(4, -3, 0, 1, 10)
+# p2p_motion(3.8, 0, 0, 1, 10)
+# p2p_motion(0, 0, 0, 1, 10)
+
+
+
+
+#
 # save_map(map)
+#
 
-# ax.clear()
+
+# bot.dir = 43
+#
 # for cnt in contours:
 #     ax.plot(*cnt)
 #
@@ -313,21 +389,41 @@ p2p_motion(0, 0, 0, 1, 10)
 #
 # clustered = maintain_clustering(frame)
 # objects = get_surrounding_objects(frame, clustered)
-# obstacle = detect_unfamiliar_object(objects)
+# obstacles = detect_unfamiliar_objects(map_from_file, bot, objects, threshold=0.05)
 #
-# lines = np.zeros([2, obstacle.shape[1]])
-# Nlines = getLines(lines, obstacle, obstacle.shape[1], tolerance=0.25)
+# for obstacle in obstacles:
+#     lines = np.zeros([2, obstacle.shape[1]])
+#     Nlines = getLines(lines, obstacle, obstacle.shape[1], tolerance=0.1)
+#     for i in range(Nlines):
+#         lidar_ax.plot([lines[0, i], lines[0, i + 1]], [lines[1, i], lines[1, i + 1]], linewidth=2)
 #
-# # lidar_ax.scatter(frame[0, :], frame[1, :], s=5, marker='o', color='gray')
-# lidar_ax.scatter(frame[0, :], frame[1, :], s=5, c=clustered.labels_, cmap='rainbow')
+# lidar_ax.scatter(frame[0, :], frame[1, :], s=4, marker='o', color='gray')
+# for obst in obstacles:
+#     lidar_ax.scatter(obst[0, :], obst[1, :], s=2, marker='o', color='magenta')
+# # lidar_ax.scatter(frame[0, :], frame[1, :], s=4, c=clustered.labels_, cmap='rainbow')
 # lidar_ax.scatter([0.0], [0.0], s=7, marker='o', color='red')
 
-map_from_file = read_map('map.csv').T
 
-map_fig, map_ax = plt.subplots()
-map_ax.set_aspect('equal')
-# for fr in map:
-#     map_ax.scatter(fr[0, :], fr[1, :], s=1, marker='o', color='gray')
-map_ax.scatter(map_from_file[0, :], map_from_file[1, :], s=1, marker='o', color='gray')
+
+# map_from_file = read_map('map.csv')
+# print(map_from_file.shape)
+# # print(map_from_file.shape)
+
+
+
+# model = maintain_clustering(map_from_file, eps=0.25)
+
+
+
+# map_fig, map_ax = plt.subplots()
+# map_ax.set_aspect('equal')
+# # for fr in map:
+# #     map_ax.scatter(fr[0, :], fr[1, :], s=1, marker='o', color='gray')
+# map_ax.scatter(map_from_file[0, :], map_from_file[1, :], s=1, marker='o', color='gray')
+# # for obst in obstacles:
+# #     map_ax.scatter(obst[0, :], obst[1, :], s=5, marker='o', color='red')
+# i = 2
+# map_ax.scatter(obstacles[i][0, :], obstacles[i][1, :], s=5, marker='o', color='red')
+# # map_ax.scatter(objects[0, :], objects[1, :], s=1, c=clustered.labels_, cmap='tab10')
 
 plt.show()
