@@ -10,20 +10,24 @@ class Bot:
         self.dir = 0.0
         self.lin_vel = 0.0
         self.ang_vel = 0.0
+
         self.ready = True
         self.data_sent = False
+
         self.goal_reached = False
 
+    # Ожидание посылки данных о движении
     def wait_for_data_sent(self):
         while not self.data_sent:
             time.sleep(0.001)
         self.data_sent = False
 
-
+    # Задание команды скоростей
     def cmd_vel(self, lin_vel, ang_vel):
         self.lin_vel = lin_vel
         self.ang_vel = ang_vel
 
+    # Движение в точку
     def move_to_pnt(self, x_g, y_g, dir_g, lin_vel, fps):
         self.goal_reached = False
         dt = 1/fps
