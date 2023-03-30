@@ -1,10 +1,15 @@
 import math as m
-from math import inf, isinf
+from math import inf, isinf, sqrt, tan
 import numpy as np
+
+import sys
+sys.setrecursionlimit(10000)
+
 
 
 # ====== РЕАЛИЗАЦИЯ ФУНКЦИЙ МНК С ИСПОЛЬЗОВАНИЕМ NUMPY =======
 
+# Вычисление функции потерь для отрезка
 def calc_loss_func(seg_pnts: np.ndarray, A: float, C: float):
     loss_func_value = 0
     for i in range(seg_pnts.shape[1]):
@@ -13,7 +18,7 @@ def calc_loss_func(seg_pnts: np.ndarray, A: float, C: float):
         loss_func_value += dist ** 2
     return loss_func_value
 
-
+# Вычисление вспомогательынх сумм
 def calc_sums(seg_pnts: np.ndarray, sums: np.ndarray):
     sums[0] = np.sum(seg_pnts[0])  # сумма всех х координат
     sums[1] = np.sum(seg_pnts[1])  # сумма всех у координат
@@ -35,7 +40,7 @@ def calc_sums_step_back(pnt: np.ndarray, sums: np.ndarray):
     sums[4] -= y ** 2
     return sums
 
-
+# Аппроксимация отрезка
 def line_approx_lsm(pnts: np.ndarray, fr: int, to: int, sums: np.ndarray, back=False):
     pts_num = to - fr
     if not back:
@@ -77,7 +82,7 @@ def calc_intersection(A1, C1, A2, C2):
     y = A2 * (C2 - C1) / (A1 - A2) + C2
     return x, y
 
-
+# Нормаль к прямой из точки
 def calc_normal(pnt, A1):
     x0 = pnt[0]
     y0 = pnt[1]
@@ -86,7 +91,7 @@ def calc_normal(pnt, A1):
     return A2, C2
 
 
-def getLines(lines: np.ndarray, pnts: np.ndarray, Npnts: int, tolerance=0.1) -> int:
+def getLines(nodes: np.ndarray, pnts: np.ndarray, Npnts: int, tolerance=0.1) -> int:
     """#returns the number of the gotten lines in lines"""
 
     line = np.zeros([2, 2], dtype=float)  # хранит 2 столбца с координатами х, у начальной и конечной точек отрезка
@@ -183,9 +188,103 @@ def getLines(lines: np.ndarray, pnts: np.ndarray, Npnts: int, tolerance=0.1) -> 
             else:
                 continue
 
-        lines[:, Nlines] = line[:, 0]
+        nodes[:, Nlines] = line[:, 0]
         Nlines += 1
+
         if i > Npnts - 1:
-            lines[:, Nlines] = line[:, 1]
+            nodes[:, Nlines] = line[:, 1]
 
     return Nlines
+
+
+# Разбиение
+def split(nodes_idx, pnts, fr, to, tolerance=0.1):
+    if to - fr <= 2:
+        return nodes_idx
+
+    else:
+        A = (pnts[1, to-1] - pnts[1, fr]) / (pnts[0, to-1] - pnts[0, fr])
+        C = pnts[1, fr] - A * pnts[0, fr]
+        dist = 0
+        idx = 0
+        for i in range(fr, to):
+            dist_t = abs(pnts[0, i] * A - pnts[1, i] + C) / m.sqrt(A ** 2 + 1)
+            if dist_t > dist:
+                dist = dist_t
+                idx = i
+
+        if idx == 0:
+            return nodes_idx
+        if dist > tolerance:
+            nodes_idx.append(idx)
+            nodes_idx = split(nodes_idx, pnts, fr, idx+1)
+            nodes_idx = split(nodes_idx, pnts, idx, to)
+
+    return nodes_idx
+
+
+# Слияние
+def getLinesSaM(nodes, nodes_idx, pnts, tolerance=0.1):
+    if pnts.shape[1] == 1:
+        nodes[:, 0] = pnts[:2, 0]
+        return 0
+    else:
+        nodes_idx = split(nodes_idx, pnts, 0, pnts.shape[1], tolerance=tolerance)
+
+    nodes_idx.append(0)
+    nodes_idx.append(pnts.shape[1] - 1)
+    lines_num = len(nodes_idx) - 1
+    nodes_idx = np.sort(np.asarray(nodes_idx))
+
+    merge = False
+    A_prev, C_prev = 0.0, 0.0
+    for i in range(lines_num):
+        if merge:
+            fr = nodes_idx[i-1]
+            to = nodes_idx[i+1] + 1
+            merge = False
+        else:
+            fr = nodes_idx[i]
+            to = nodes_idx[i+1] + 1
+
+        pcross = np.array([0.0, 0.0])
+        sums = np.zeros([5], dtype=float)
+        A, C, _, _ = line_approx_lsm(pnts, fr, to, sums)
+        if i > 0:
+            if A == A_prev:
+                pcross[0], pcross[1] = inf, inf
+            else:
+                if isinf(A_prev):
+                    pcross[0], pcross[1] = C_prev, A * C_prev + C
+                elif isinf(A):
+                    pcross[0], pcross[1] = C, A_prev * C + C_prev
+                else:
+                    pcross[0] = (C_prev - C) / (A - A_prev)
+                    pcross[1] = A_prev * (C_prev - C) / (A - A_prev) + C_prev
+
+            if m.isnan(pcross[0]) or m.isinf(pcross[0]):
+                if to-fr <= 2:
+                    pcross[0] = (pnts[0, fr] + A_prev * pnts[1, fr] - A_prev * C_prev) / (A_prev ** 2 + 1)
+                    pcross[1] = A_prev * pcross[0] + C_prev
+
+                    nodes[0, i] = pcross[0]
+                    nodes[1, i] = pcross[1]
+
+            else:
+                nodes[0, i] = pcross[0]
+                nodes[1, i] = pcross[1]
+
+        else:
+            A_prev, C_prev = calc_normal(pnts[:2, 0], A)
+            nodes[0, 0], nodes[1, 0] = calc_intersection(A_prev, C_prev, A, C)
+
+        if i == lines_num - 1:
+            A_last, C_last = calc_normal(pnts[:2, -1], A)
+            nodes[0, lines_num], nodes[1, lines_num] = calc_intersection(A, C, A_last, C_last)
+
+        A_prev = A
+        C_prev = C
+
+    return lines_num
+
+
