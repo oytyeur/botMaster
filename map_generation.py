@@ -14,6 +14,13 @@ import csv
 from Bot import Bot
 from vectorization import getLines, getLinesSaM
 
+# TODO аспределение по файлам-классам:
+# Класс сцены: создание, редактирование, движение объектов
+# Класс робота: движение, планирование пути
+# Класс лидара: получение данных, обработка, детекция препятствий (векторизацию сюда же)
+# Класс визуализатора: отрисовка, окна и пр.
+
+
 # Построение сцены
 def create_scene():
     contours = []
@@ -28,14 +35,14 @@ def create_scene():
     return contours
 
 # Формирование кадра лидара
-def get_lidar_frame(bot, contours, N, noise_std=0.1, lidar_angle=(pi - 0.001)):
-    d_ang = lidar_angle / (N - 1)
+def get_lidar_frame(bot, contours, beams_num=100, noise_std=0.1, lidar_angle=(pi - 0.001)):
+    d_ang = lidar_angle / (beams_num - 1)
     beam_angle_0 = (lidar_angle + pi) / 2
-    cart_lidar_frame = np.zeros([3, N], dtype=float)
+    cart_lidar_frame = np.zeros([3, beams_num], dtype=float)
     cart_lidar_frame[2, :] = 1
-    polar_lidar_frame = np.zeros([3, N], dtype=float)
+    polar_lidar_frame = np.zeros([3, beams_num], dtype=float)
     polar_lidar_frame[2, :] = 1
-    dists = np.zeros([N], dtype=float)
+    dists = np.zeros([beams_num], dtype=float)
     dists[:] = inf
 
     B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
@@ -72,7 +79,7 @@ def get_lidar_frame(bot, contours, N, noise_std=0.1, lidar_angle=(pi - 0.001)):
             seg_angles[1] = atan2(seg_end_W2B[1], seg_end_W2B[0])
             seg_angles.sort()
 
-            for j in range(N):
+            for j in range(beams_num):
                 beam_angle = beam_angle_0 - d_ang * j
                 beam_k = tan(beam_angle)
                 beam_b = 0
@@ -92,10 +99,10 @@ def get_lidar_frame(bot, contours, N, noise_std=0.1, lidar_angle=(pi - 0.001)):
                         continue
                     d = sqrt(intsec_x ** 2 + intsec_y ** 2)
                     if d < dists[j]:
-                        dists[j] = d
+                            dists[j] = d
                 else:
                     continue
-    for i in range(N):
+    for i in range(beams_num):
         dist_noise = normalvariate(0.0, noise_std / 10)
         if isinf(dists[i]):
             cart_lidar_frame[0, i] = 0.0
@@ -330,8 +337,15 @@ def wait_for_bot_data(bot):
         time.sleep(0.001)
     bot.data_sent = True
 
+# TODO: вероятно, нужда в отдельном процессе есть только у лидара - ждать его кадра,
+# движение робота можно осуществить, передав ему время вычислений текущей обстановки и прочего, то есть
+# робот получил новое положение, в этом положении происходят получение кадра, обработка, принятие решения
+# Хотя в процессе движения за время обработки данных он может проехать гораздо дальше положения, в котором шли вычисления
+# Можно замерять время вычислений и после принятия решения о движении при
+
+
 # Движение из точки в точку
-def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, mapping=True, initial=False):
+def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=True, initial=False):
     global map, t_INC, t_SaM
     ax.clear()
     for cnt in contours:
@@ -351,6 +365,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, mapping=True, initial=Fal
 
     while not bot.goal_reached:
         wait_for_bot_data(bot)
+
         bot_img.remove()
         bot_nose.remove()
         bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
@@ -362,12 +377,13 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, mapping=True, initial=Fal
         ax.add_patch(bot_nose)
 
         lidar_ax.clear()
-        frame, _ = get_lidar_frame(bot, contours, N, noise_std)
-        lidar_ax.scatter(frame[0, :], frame[1, :], s=4, marker='o', color='gray')
+        # t0 = time.time()
+        frame, _ = get_lidar_frame(bot, contours, beams_num)
+
+        # лучи лидара
         # for i in range(frame.shape[1]):
         #     lidar_ax.plot([0.0, frame[0, i]], [0.0, frame[1, i]],
         #                   linewidth=0.1, color='red')
-
 
         if mapping:
             if initial:
@@ -375,11 +391,22 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, mapping=True, initial=Fal
                 initial = False
             else:
                 map = update_map(map, bot, frame, initial, threshold=0.05)
+            # серые точки кадра
+            lidar_ax.scatter(frame[0, :], frame[1, :], s=4, marker='o', color='gray')
+
+            lidar_ax.scatter([0.0], [0.0], s=10, color='red')
         else:
             clustered = maintain_frame_clustering(frame, eps=0.4)
             objects = get_surrounding_objects(frame, clustered)
             obstacles = detect_unfamiliar_objects(map_from_file, bot, objects, threshold=0.1)
 
+            # ось лидара
+            lidar_ax.scatter([0.0], [0.0], s=10, color='red')
+
+            # серые точки кадра
+            lidar_ax.scatter(frame[0, :], frame[1, :], s=4, marker='o', color='gray')
+
+            # # цветные точки после кластеризации
             # lidar_ax.scatter(frame[0, :], frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
 
             for obst in obstacles:
@@ -390,13 +417,12 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, mapping=True, initial=Fal
                     lidar_ax.plot([nodes[0, i], nodes[0, i + 1]], [nodes[1, i], nodes[1, i + 1]],
                                      linewidth=1.5, color='magenta')
 
-
+        # print(time.time() - t0)
         plt.draw()
         plt.pause(1/fps)
 
 
 def get_single_frame():
-    global t_INC, t_SaM, dist_INC, dist_SaM, N_INC, N_SaM
     map_from_file = read_map('map.csv')
     ax.clear()
     for cnt in contours:
@@ -413,10 +439,6 @@ def get_single_frame():
 
     frame, _ = get_lidar_frame(bot, contours, N, noise_std)
     lidar_ax.scatter(frame[0, :], frame[1, :], s=3, marker='o', color='gray')
-
-    # for i in range(frame.shape[1]):
-    #     lidar_ax.plot([0.0, frame[0, i]], [0.0, frame[1, i]],
-    #                   linewidth=0.1, color='red')
 
     clustered = maintain_frame_clustering(frame, eps=0.4)
     objects = get_surrounding_objects(frame, clustered)
@@ -449,9 +471,6 @@ def get_single_frame():
 
 # TODO: вынести константы в предвырительное объявление
 
-N = 300 # число измерительных лучей
-noise_std = 0.1 # чи
-prev_frame = np.zeros([3, N], dtype=float)
 
 bot = Bot()
 
@@ -466,30 +485,36 @@ contours = create_scene()
 
 # # ПРЕДВАРИТЕЛЬНОЕ КАРТИРОВАНИЕ
 # map = []
-# p2p_motion(-2, 4, 0, 1, 10, initial=True)
-# p2p_motion(-3, -4.2, 0, 1, 10)
-# p2p_motion(4, -3, 0, 1, 10)
-# p2p_motion(3.8, 2, 0, 1, 10)
-# p2p_motion(0, 0, 0, 1, 10)
+# mapping_lin_vel = 1
+# fps = 10
+# p2p_motion(-1.5, 4.5, 0, mapping_lin_vel, fps, initial=True)
+# p2p_motion(-4, -4.2, 0, mapping_lin_vel, fps)
+# p2p_motion(4, -3, 0, mapping_lin_vel, fps)
+# p2p_motion(4.2, 3.2, 0, mapping_lin_vel, fps)
+# p2p_motion(0, 0, 0, mapping_lin_vel, fps)
 # save_map(map)
 
 
-# # ДВИЖЕНИЕ С ИМЕЮЩЕЙСЯ КАРТОЙ, ОТРАБОТКА ТРАЕКТОРИИ
-# # Добавление незакартированных препятствий
-# contours.append(np.asarray([[-4, -4, -3, -3, -4], [4, 3, 3, 4, 4]], dtype=float))
-# contours.append(np.asarray([[0, -0.5, -0.5, 0, 0], [4, 4, 3.5, 3.5, 4]], dtype=float))
-# contours.append(np.asarray([[-4, -4.5, -4.5, -4, -4], [0, 0, 0.5, 0.5, 0]], dtype=float))
-# contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [3, 3, 4, 4, 3]], dtype=float))
-# contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [-3, -3, -4, -4, -3]], dtype=float))
-# contours.append(np.asarray([[4, 3.5, 3.5, 4, 4], [-4, -4, -4.5, -4.5, -4]], dtype=float))
-# contours.append(np.asarray([[-1, 0, 0.5, -1], [-4.7, -4.3, -4.5, -4.7]], dtype=float))
-# # Движение по карте с незнакомыми препятствиями
-# map_from_file = read_map('map.csv')
-# p2p_motion(-2, 4, 0, 1, 10, mapping=False)
-# p2p_motion(-3, -4.2, 0, 1, 10, mapping=False)
-# p2p_motion(4, -3, 0, 1, 10, mapping=False)
-# p2p_motion(3.8, 0, 0, 1, 10, mapping=False)
-# p2p_motion(0, 0, 0, 1, 10, mapping=False)
+# ДВИЖЕНИЕ С ИМЕЮЩЕЙСЯ КАРТОЙ, ОТРАБОТКА ТРАЕКТОРИИ
+# Добавление незакартированных препятствий
+contours.append(np.asarray([[-4, -4, -3, -3, -4], [4, 3, 3, 4, 4]], dtype=float))
+contours.append(np.asarray([[0, -0.5, -0.5, 0, 0], [4, 4, 3.5, 3.5, 4]], dtype=float))
+contours.append(np.asarray([[-4, -4.5, -4.5, -4, -4], [0, 0, 0.5, 0.5, 0]], dtype=float))
+contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [3, 3, 4, 4, 3]], dtype=float))
+contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [-3, -3, -4, -4, -3]], dtype=float))
+contours.append(np.asarray([[4, 3.5, 3.5, 4, 4], [-4, -4, -4.5, -4.5, -4]], dtype=float))
+contours.append(np.asarray([[-1, 0, 0.5, -1], [-4.7, -4.3, -4.5, -4.7]], dtype=float))
+# Движение по карте с незнакомыми препятствиями
+map_from_file = read_map('map.csv')
+beams_num = 300
+fps = 10
+motion_lin_vel = 1
+
+p2p_motion(-2, 4, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+p2p_motion(-3, -4.2, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+p2p_motion(4, -3, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+p2p_motion(3.8, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+p2p_motion(0, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
 
 
 
@@ -535,11 +560,8 @@ contours = create_scene()
 
 
 # # ПОКАЗАТЬ КАРТУ
-# map_fig, map_ax = plt.subplots()
-# map_ax.set_aspect('equal')
-
-map_from_file = read_map('map.csv')
-vectorize_map(map_from_file)
+# map_from_file = read_map('map.csv')
+# vectorize_map(map_from_file)
 
 # map_clustered = maintain_map_clustering(map_from_file, eps=0.4)
 # # map_contours = get_map_contours(map_from_file, map_clustered)
