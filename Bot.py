@@ -14,6 +14,8 @@ class Bot:
         self.ready = True
         self.data_sent = False
 
+        self.motion_allowed = False
+
         self.goal_reached = False
 
     # Ожидание посылки данных о движении
@@ -21,6 +23,21 @@ class Bot:
         while not self.data_sent:
             time.sleep(0.001)
         self.data_sent = False
+
+    # TODO: производить долю движения постоянно при вызове команды cmd_vel даже с нулевой скоростью в отдельном потоке
+    # поток имеет функцию start/stop
+
+    def start(self, fps):
+        self.motion_allowed = True
+        self.cmd_vel(0.0, 0.0)
+        while self.motion_allowed:
+            self.move_dt(1/fps)
+
+    # Доля движения с заданной скоростью
+    def move_dt(self, dt):
+        self.x += self.lin_vel * dt * cos(radians(self.dir))
+        self.y += self.lin_vel * dt * sin(radians(self.dir))
+        self.dir += self.ang_vel * dt % 360.0
 
     # Задание команды скоростей
     def cmd_vel(self, lin_vel, ang_vel):
@@ -32,11 +49,10 @@ class Bot:
         self.goal_reached = False
         dt = 1/fps
         path_dir = degrees(atan2(y_g - self.y, x_g - self.x))
-        self.cmd_vel(0.0, 60.0)
+        self.cmd_vel(0.0, 45.0)
         while not self.dir == path_dir:
             self.ready = False
             time.sleep(dt)
-
             if self.dir > 0 and path_dir < 0:
                 path_dir += 360
 
@@ -46,11 +62,11 @@ class Bot:
                 self.dir = path_dir
 
             else:
-                self.dir += self.ang_vel * dt % (2 * pi)
+                self.dir += self.ang_vel * dt % 360.0
             self.ready = True
             self.wait_for_data_sent()
 
-        self.cmd_vel(lin_vel, 0.0)
+        self.cmd_vel(lin_vel, 0)
         dist = sqrt((x_g - self.x) ** 2 + (y_g - self.y) ** 2)
         while dist > 0.0:
             self.ready = False
