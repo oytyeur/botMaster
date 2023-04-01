@@ -363,9 +363,9 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=Tr
     motion = threading.Thread(target=bot.move_to_pnt, args=(x_goal, y_goal, dir_goal, lin_vel, fps))
     motion.start()
 
-    while not bot.goal_reached:
-        wait_for_bot_data(bot)
+    t = 0.0
 
+    while not bot.goal_reached:
         bot_img.remove()
         bot_nose.remove()
         bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
@@ -419,8 +419,13 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=Tr
 
         # print(time.time() - t0)
         plt.draw()
-        plt.pause(1/fps)
+        # plt.pause(1/fps)
+        plt.pause(0.001)
+        t0 = time.time()
+        wait_for_bot_data(bot)
+        t += time.time() - t0
 
+    print(t)
 
 def get_single_frame():
     map_from_file = read_map('map.csv')
@@ -510,11 +515,15 @@ beams_num = 300
 fps = 10
 motion_lin_vel = 1
 
-p2p_motion(-2, 4, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
-p2p_motion(-3, -4.2, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
-p2p_motion(4, -3, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
-p2p_motion(3.8, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
-p2p_motion(0, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+# t0 = time.time()
+p2p_motion(4, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+# print(time.time() - t0)
+
+# p2p_motion(-2, 4, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+# p2p_motion(-3, -4.2, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+# p2p_motion(4, -3, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+# p2p_motion(3.8, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+# p2p_motion(0, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
 
 
 
