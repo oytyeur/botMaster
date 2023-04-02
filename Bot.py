@@ -235,7 +235,8 @@ class Bot:
     #         print("Goal reached")
 
 
-# Движение в точку
+    # Движение в точку, проверка положения
+    # TODO: обавить развороты и против часовой стрелки
     def move_to_pnt_check(self, x_g, y_g, dir_g, lin_vel, fps):
         self.ready = True
         dist = sqrt((x_g - self.x) ** 2 + (y_g - self.y) ** 2)
