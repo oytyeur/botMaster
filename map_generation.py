@@ -38,7 +38,7 @@ def create_scene():
     return contours
 
 # Формирование кадра лидара
-def get_lidar_frame(bot, contours, beams_num=100, noise_std=0.1, lidar_angle=(pi - 0.001)):
+def get_lidar_frame(c_x, c_y, c_dir, contours, beams_num=100, noise_std=0.1, lidar_angle=(pi - 0.001)):
     d_ang = lidar_angle / (beams_num - 1)
     beam_angle_0 = (lidar_angle + pi) / 2
     cart_lidar_frame = np.zeros([3, beams_num], dtype=float)
@@ -48,8 +48,8 @@ def get_lidar_frame(bot, contours, beams_num=100, noise_std=0.1, lidar_angle=(pi
     dists = np.zeros([beams_num], dtype=float)
     dists[:] = inf
 
-    B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
-                        [sin(radians(bot.dir - 90)), cos(radians(bot.dir - 90)), bot.y],
+    B2W_T = np.asarray([[cos(radians(c_dir - 90)), -sin(radians(c_dir - 90)), c_x],
+                        [sin(radians(c_dir - 90)), cos(radians(c_dir - 90)), c_y],
                         [0, 0, 1]], dtype=float)
     W2B_T = inv(B2W_T)
 
@@ -154,11 +154,11 @@ def get_surrounding_objects(lidar_frame, clust_output):
     return objects
 
 # Обнаружение незнакомых препятствий с помощью карты
-def detect_unfamiliar_objects(map, bot, objects, threshold=0.1):
+def detect_unfamiliar_objects(map, c_x, c_y, c_dir, objects, threshold=0.1):
     expansion = 0.05
     unfamiliar_objects = []
-    B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
-                        [sin(radians(bot.dir - 90)), cos(radians(bot.dir - 90)), bot.y],
+    B2W_T = np.asarray([[cos(radians(c_dir - 90)), -sin(radians(c_dir - 90)), c_x],
+                        [sin(radians(c_dir - 90)), cos(radians(c_dir - 90)), c_y],
                         [0, 0, 1]], dtype=float)
     trans_map = map.T
     for object in objects:
@@ -198,10 +198,10 @@ def detect_unfamiliar_objects(map, bot, objects, threshold=0.1):
 
 # TODO обрезать дальность обзора до метров 5, например
 # Дополнение карты новым кадром
-def update_map(map, bot, lidar_frame, initial, threshold=0.05):
+def update_map(map, c_x, c_y, c_dir, lidar_frame, initial, threshold=0.05):
     expansion = 0.05
-    B2W_T = np.asarray([[cos(radians(bot.dir - 90)), -sin(radians(bot.dir - 90)), bot.x],
-                        [sin(radians(bot.dir - 90)), cos(radians(bot.dir - 90)), bot.y],
+    B2W_T = np.asarray([[cos(radians(c_dir - 90)), -sin(radians(c_dir - 90)), c_x],
+                        [sin(radians(c_dir - 90)), cos(radians(c_dir - 90)), c_y],
                         [0, 0, 1]], dtype=float)
     lidar_frame_B2W = B2W_T @ lidar_frame
     if not initial:
@@ -369,20 +369,19 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=Tr
     # ptp_motion_thread.start()
     t0 = time.time()
     while not bot.goal_reached:
-        # TODO: ПОДТРАИВАЕТ НА ПОВОРОТАХ (ДОЕЗДАХ): ПРОВЕРКА РЕАЛЬНОГО ПОЛОЖЕНИЯ ОСУЩЕСТВЛЯЕТСЯ С fps, ДИСКРЕТИЗАЦИЯ ДВИЖЕНИЯ ЧАЩЕ
-        bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
+        c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
         bot_img.remove()
         bot_nose.remove()
-        bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
+        bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
         ax.add_patch(bot_img)
-        bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
-                                  bot.y - 0.01 * sin(radians(bot.dir))),
+        bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
+                                  c_y - 0.01 * sin(radians(c_dir))),
                                  bot.radius, 0.02,
-                                 angle=bot.dir, rotation_point='xy', color='black')
+                                 angle=c_dir, rotation_point='xy', color='black')
         ax.add_patch(bot_nose)
 
         lidar_ax.clear()
-        frame, _ = get_lidar_frame(bot, contours, beams_num)
+        frame, _ = get_lidar_frame(c_x, c_y, c_dir, contours, beams_num)
 
         # лучи лидара
         # for i in range(frame.shape[1]):
@@ -390,10 +389,10 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=Tr
         #                   linewidth=0.1, color='red')
 
         if initial:
-            map = update_map(map, bot, frame, initial)
+            map = update_map(map, c_x, c_y, c_dir, frame, initial)
             initial = False
         else:
-            map = update_map(map, bot, frame, initial, threshold=0.05)
+            map = update_map(map, c_x, c_y, c_dir, frame, initial, threshold=0.05)
         # серые точки кадра
         lidar_ax.scatter(frame[0, :], frame[1, :], s=4, marker='o', color='gray')
         # ось лидара
@@ -457,22 +456,24 @@ def get_single_frame():
 def generate_map(bot, fps=10):
     # ПРЕДВАРИТЕЛЬНОЕ КАРТИРОВАНИЕ
     mapping_lin_vel = 2
-    # p2p_motion(4, 0, 0, mapping_lin_vel, fps, initial=True)
+    sim_lin_vel = 2 * mapping_lin_vel
+    t0 = time.time()
+    # p2p_motion(4, 0, 0, sim_lin_vel, fps, initial=True)
 
 
-    p2p_motion(-1.5, 4.5, 0, mapping_lin_vel, fps, initial=True)
-    p2p_motion(-4, -4.2, 0, mapping_lin_vel, fps)
-    p2p_motion(4, -3, 0, mapping_lin_vel, fps)
-    p2p_motion(4.2, 3.2, 0, mapping_lin_vel, fps)
-    p2p_motion(0, 0, 0, mapping_lin_vel, fps)
-    # save_map(map)
+    p2p_motion(-1.5, 4.5, 0, sim_lin_vel, fps, initial=True)
+    p2p_motion(-4, -4.2, 0, sim_lin_vel, fps)
+    p2p_motion(4, -3, 0, sim_lin_vel, fps)
+    p2p_motion(4.2, 3.2, 0, sim_lin_vel, fps)
+    p2p_motion(0, 0, 0, sim_lin_vel, fps)
+    save_map(map)
 
 
 # TODO: добить кластеризацию контуров и работать уже с полигональной картой
 
 # TODO: вынести константы в предвырительное объявление
 map = []
-fps = 10
+fps = 20
 discr_dt = 0.01
 bot = Bot(discr_dt)
 # motion = threading.Thread(target=bot.move_dt, args=(1/fps))

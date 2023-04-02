@@ -33,7 +33,7 @@ class Bot:
         self.goal_reached = False
 
         self.lock = threading.Lock()
-        self.motion_thread = threading.Thread(target=self.move)
+        self.motion_thread = threading.Thread(target=self.move, daemon=True)
         # self.motion_thread = Process(target=self.move, daemon=True)
 
         self.start()
@@ -258,6 +258,8 @@ class Bot:
                             if path_dir > 180:
                                 path_dir -= 360
                             self.ang_step = True
+                    else:
+                        self.aligned = True
 
             else:
                 if self.lin_step:
@@ -277,7 +279,8 @@ class Bot:
                         self.cmd_vel(0.0, 0.0)
                         self.lin_step = True
 
-
         else:
             self.goal_reached = True
             print("Goal reached")
+
+        return self.x, self.y, self.dir
