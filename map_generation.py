@@ -354,11 +354,13 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=Tr
     for cnt in contours:
         ax.plot(*cnt)
 
-    bot_img = plt.Circle((bot.x, bot.y), bot.radius, color='r')
-    bot_nose = plt.Rectangle((bot.x + 0.01 * sin(radians(bot.dir)),
-                              bot.y - 0.01 * sin(radians(bot.dir))),
+    c_x, c_y, c_dir = bot.get_current_position()
+
+    bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
+    bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
+                              c_y - 0.01 * sin(radians(c_dir))),
                              bot.radius, 0.02,
-                             angle=bot.dir, rotation_point='xy', color='black')
+                             angle=c_dir, rotation_point='xy', color='black')
 
     ax.add_patch(bot_img)
     ax.add_patch(bot_nose)

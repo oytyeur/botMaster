@@ -83,6 +83,9 @@ class Bot:
         self.lin_vel = lin_vel
         self.ang_vel = ang_vel
 
+    def get_current_position(self):
+        return self.x, self.y, self.dir
+
     # # Движение в точку
     # def move_to_pnt(self, x_g, y_g, dir_g, lin_vel, fps):
     #     self.goal_reached = False
@@ -249,7 +252,7 @@ class Bot:
 
                 else:
                     if abs(self.dir - path_dir) > 0 and not self.aligned:
-                        self.cmd_vel(0.0, 72.0)
+                        self.cmd_vel(0.0, 144.0)
                         if self.dir > 0 and path_dir < 0:
                             path_dir += 360
                         if not path_dir - self.dir > self.ang_vel * (1/fps):
@@ -283,4 +286,4 @@ class Bot:
             self.goal_reached = True
             print("Goal reached")
 
-        return self.x, self.y, self.dir
+        return self.get_current_position()
