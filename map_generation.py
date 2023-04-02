@@ -33,8 +33,8 @@ def create_scene():
 
     obst_1 = np.asarray([[0.5, 2, 2, 0.5, 0.5], [2, 2, 4.4, 4.4, 2]], dtype=float)
     obst_2 = np.asarray([[-2, 0, 1, 0, -2, -2], [0, -1, -1, -2, -2, 0]], dtype=float)
-    contours.append(obst_1)
-    contours.append(obst_2)
+    # contours.append(obst_1)
+    # contours.append(obst_2)
 
     return contours
 
@@ -326,17 +326,17 @@ def generate_map(bot, fps=10):
 # # ПРОИЗВЕСТИ КАРТИРОВАНИЕ
 # contours = create_scene()
 # generate_map(bot, fps=fps)
-
-
-
-# # ПОКАЗАТЬ КАДР В НЕКОТОРОЙ ПОЗИЦИИ РОБОТА
-# # bot.x = 3
-# # bot.y = 1
-# # bot.dir = -90
-# # get_single_frame()
-
-
-
+#
+#
+#
+# # # ПОКАЗАТЬ КАДР В НЕКОТОРОЙ ПОЗИЦИИ РОБОТА
+# # # bot.x = 3
+# # # bot.y = 1
+# # # bot.dir = -90
+# # # get_single_frame()
+#
+#
+#
 # # ПОКАЗАТЬ КАРТУ
 # map_from_file = read_map('map.csv')
 # vectorize_map(map_from_file)
