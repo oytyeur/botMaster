@@ -15,16 +15,19 @@ import csv
 
 
 class SceneObject:
-    def __init__(self, nodes_coords, movable=False):
+    def __init__(self, nodes_coords, lin_vel=0.0, ang_vel=0.0, dir=0.0, movable=False):
         self.nodes_coords = np.zeros([3, nodes_coords.shape[1]], dtype=float)
         self.nodes_coords[:2, :] = nodes_coords
         self.nodes_coords[2, :] = 1.0
         self.movable = movable
 
         if movable:
-            self.lin_vel = 0.0
-            self.ang_vel = 0.0
-            self.dir = 0.0
+            self.lin_vel = lin_vel
+            self.ang_vel = ang_vel
+            self.dir = dir
 
-    # # Движение объекта
-    # def move(self):
+    # Движение объекта
+    def transform(self, dt):
+        self.nodes_coords[1, :] += self.lin_vel * dt
+        if not np.max(self.nodes_coords[1, :]) > -2.5:
+            self.nodes_coords[1, :] += 5

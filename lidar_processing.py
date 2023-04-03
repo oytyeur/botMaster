@@ -176,4 +176,6 @@ def detect_unfamiliar_objects(map, c_x, c_y, c_dir, objects, threshold=0.1):
             if count > 0:
                 unfamiliar_objects.append(inv(B2W_T) @ new_obj[:, :count])
 
-    return unfamiliar_objects  # TODO: векторизованные на выходе
+    return unfamiliar_objects
+
+

@@ -20,7 +20,8 @@ class Environment:
     # создание сцены
     def __init__(self):
         self.objects = []
-        room_coords = np.asarray([[5, -5, -5, 5, 5], [5, 5, -5, -5, 5]], dtype=float)
+        # room_coords = np.asarray([[5, -5, -5, 5, 5], [5, 5, -5, -5, 5]], dtype=float)
+        room_coords = np.asarray([[10, -1, -1, 10, 10], [2.5, 2.5, -2.5, -2.5, 2.5]], dtype=float)
         room = SceneObject(room_coords)
         self.objects.append(room)
 
@@ -30,8 +31,8 @@ class Environment:
         # contours.append(obst_2)
 
     # добавить объект
-    def add_object(self, nodes_coords, movable=False):
-        obj = SceneObject(nodes_coords, movable)
+    def add_object(self, nodes_coords, lin_vel=0, ang_vel=0, dir=0.0, movable=False):
+        obj = SceneObject(nodes_coords, lin_vel, ang_vel, dir, movable)
         self.objects.append(obj)
 
     # # удалить объект
