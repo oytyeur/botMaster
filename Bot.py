@@ -59,17 +59,16 @@ class Bot:
         self.cmd_vel(0.0, 0.0)
 
 
-    # TODO: РАЗОБРАТЬСЯ
     # Доля движения с заданной скоростью
     def move_dt(self):
-        self.temp_x += self.lin_vel * self.DISCR_dT * cos(radians(self.temp_dir))
-        self.temp_y += self.lin_vel * self.DISCR_dT * sin(radians(self.temp_dir))
-        self.temp_dir += (self.ang_vel * self.DISCR_dT) % 360.0
-        if self.ready:
-            self.x = self.temp_x
-            self.y = self.temp_y
-            self.dir = self.temp_dir
-            self.ready = False
+        self.x += self.lin_vel * self.DISCR_dT * cos(radians(self.dir))
+        self.y += self.lin_vel * self.DISCR_dT * sin(radians(self.dir))
+        self.dir += (self.ang_vel * self.DISCR_dT) % 360.0
+        # if self.ready:
+        #     self.x = self.x
+        #     self.y = self.y
+        #     self.dir = self.dir
+        #     self.ready = False
 
     # процесс движения
     def move(self):
@@ -82,6 +81,17 @@ class Bot:
     def cmd_vel(self, lin_vel, ang_vel):
         self.lin_vel = lin_vel
         self.ang_vel = ang_vel
+
+    # поместить в определённую позицию
+    def set_position(self, x, y, dir=0.0):
+        self.x = x
+        self.y = y
+        self.dir = dir
+
+        self.temp_x = x
+        self.temp_y = y
+        self.temp_dir = dir
+
 
     def get_current_position(self):
         return self.x, self.y, self.dir
