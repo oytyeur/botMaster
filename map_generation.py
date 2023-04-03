@@ -192,7 +192,7 @@ def wait_for_bot_data(bot):
 
 
 # Движение из точки в точку
-def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100, mapping=True, initial=False):
+def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100, initial=False):
     global map
     ax.clear()
     for obj in scene.objects:
@@ -209,7 +209,6 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100, map
     ax.add_patch(bot_img)
     ax.add_patch(bot_nose)
 
-    t = 0.0
     # TODO: ПОЧЕМУ ТРОИТ ПРИ ВЫЗОВЕ В ОТДЕЛЬНОМ ПОТОКЕ
     # ptp_motion_thread = threading.Thread(target=bot.move_to_pnt, args=(x_goal, y_goal, dir_goal, lin_vel))
     # ptp_motion_thread.start()
@@ -314,11 +313,11 @@ def generate_map(bot, scene, fps=10):
 # map = []
 #
 # scene = Environment()
-# new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
-# scene.add_object(new_object, movable=True)
+# # new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
+# # scene.add_object(new_object, movable=True)
 #
 # fps = 20
-# discr_dt = 0.01
+# discr_dt = 0.02
 # bot = Bot(discr_dt)
 #
 # fig, ax = plt.subplots()
@@ -330,14 +329,13 @@ def generate_map(bot, scene, fps=10):
 # # ПРОИЗВЕСТИ КАРТИРОВАНИЕ
 # # contours = create_scene()
 # generate_map(bot, scene, fps=fps)
-
-
+#
+#
 # # # ПОКАЗАТЬ КАДР В НЕКОТОРОЙ ПОЗИЦИИ РОБОТА
 # # # bot.x = 3
 # # # bot.y = 1
 # # # bot.dir = -90
 # # # get_single_frame()
-#
 #
 #
 # # ПОКАЗАТЬ КАРТУ

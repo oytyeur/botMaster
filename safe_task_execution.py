@@ -9,10 +9,12 @@ import time
 import csv
 
 from Bot import Bot
-from vectorization import getLines, getLinesSaM
+from vectorization import getLinesSaM, get_vectorized_obstacles
 from map_generation import read_map
 from environment import Environment
 from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_surrounding_objects, detect_unfamiliar_objects
+from visualization import Visualizer
+
 
 
 # TODO аспределение по файлам-классам:
@@ -30,23 +32,22 @@ from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_sur
 
 
 # Движение из точки в точку
-def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100):
+def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100, wanna_watch=True):
+    global bot_img, bot_nose
     ax.clear()
     for obj in scene.objects:
         ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
 
-    c_x, c_y, c_dir = bot.get_current_position()
-
-    bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
-    bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
-                              c_y - 0.01 * sin(radians(c_dir))),
-                             bot.radius, 0.02,
-                             angle=c_dir, rotation_point='xy', color='black')
+    # c_x, c_y, c_dir = bot.get_current_position()
+    #
+    # bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
+    # bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
+    #                           c_y - 0.01 * sin(radians(c_dir))),
+    #                          bot.radius, 0.02,
+    #                          angle=c_dir, rotation_point='xy', color='black')
 
     ax.add_patch(bot_img)
     ax.add_patch(bot_nose)
-
-    t = 0.0
 
     while not bot.goal_reached:
         c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
@@ -62,7 +63,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100):
         ax.add_patch(bot_nose)
 
         lidar_ax.clear()
-        # t0 = time.time()
+
         frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
 
         # лучи лидара
@@ -73,6 +74,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100):
         clustered = maintain_frame_clustering(frame, eps=0.4)
         objects = get_surrounding_objects(frame, clustered)
         obstacles = detect_unfamiliar_objects(map_from_file, c_x, c_y, c_dir, objects, threshold=0.1)
+        vect_obstacles = get_vectorized_obstacles(obstacles)
 
         # ось лидара
         lidar_ax.scatter([0.0], [0.0], s=10, color='red')
@@ -83,19 +85,78 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100):
         # # цветные точки после кластеризации
         # lidar_ax.scatter(frame[0, :], frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
 
-        for obst in obstacles:
-            nodes = np.zeros([2, obst.shape[1]], dtype=float)
-            nodes_idx = []
-            lines_num = getLinesSaM(nodes, nodes_idx, obst, tolerance=0.1)
-            for i in range(lines_num):
-                lidar_ax.plot([nodes[0, i], nodes[0, i + 1]], [nodes[1, i], nodes[1, i + 1]],
-                                 linewidth=1.5, color='magenta')
+        # for obst in obstacles:
+        #     nodes = np.zeros([2, obst.shape[1]], dtype=float)
+        #     nodes_idx = []
+        #     lines_num = getLinesSaM(nodes, nodes_idx, obst, tolerance=0.1)
+        #     for i in range(lines_num):
+        #         lidar_ax.plot([nodes[0, i], nodes[0, i + 1]], [nodes[1, i], nodes[1, i + 1]],
+        #                          linewidth=1.5, color='magenta')
 
+        if vect_obstacles:
+            for obst in vect_obstacles:
+                for i in range(obst.shape[1]-1):
+                    lidar_ax.plot([obst[0, i], obst[0, i + 1]], [obst[1, i], obst[1, i + 1]],
+                                  linewidth=1.5, color='magenta')
+
+        # if wanna_watch:
+        #     vis.visualize(scene, bot, c_x, c_y, c_dir, frame, vect_obstacles)
 
         plt.draw()
         plt.pause(1/fps)
 
     bot.goal_reached = False
+
+
+def wait_for_assignment(bot, wanna_watch=True):
+    c_x, c_y, c_dir = bot.get_current_position()
+
+    ax.clear()
+    for obj in scene.objects:
+        ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
+
+    ax.add_patch(bot_img)
+    ax.add_patch(bot_nose)
+    print('Waiting for assignment')
+
+    while True:
+
+        lidar_ax.clear()
+        frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
+
+        # лучи лидара
+        # for i in range(frame.shape[1]):
+        #     lidar_ax.plot([0.0, frame[0, i]], [0.0, frame[1, i]],
+        #                   linewidth=0.1, color='red')
+
+        clustered = maintain_frame_clustering(frame, eps=0.4)
+        objects = get_surrounding_objects(frame, clustered)
+        obstacles = detect_unfamiliar_objects(map_from_file, c_x, c_y, c_dir, objects, threshold=0.1)
+        vect_obstacles = get_vectorized_obstacles(obstacles)
+
+        # if wanna_watch:
+        #     vis.visualize(scene, bot, c_x, c_y, c_dir, frame, vect_obstacles)
+
+
+        # ось лидара
+        lidar_ax.scatter([0.0], [0.0], s=10, color='red')
+
+        # серые точки кадра
+        lidar_ax.scatter(frame[0, :], frame[1, :], s=4, marker='o', color='gray')
+
+        # # цветные точки после кластеризации
+        # lidar_ax.scatter(frame[0, :], frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
+
+        if vect_obstacles:
+            for obst in vect_obstacles:
+                for i in range(obst.shape[1] - 1):
+                    lidar_ax.plot([obst[0, i], obst[0, i + 1]], [obst[1, i], obst[1, i + 1]],
+                                  linewidth=1.5, color='magenta')
+
+        plt.draw()
+        plt.pause(1 / fps)
+
+        # time.sleep(1/fps)
 
 
 # def get_single_frame():
@@ -142,48 +203,78 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100):
 #                              linewidth=1.5, color='magenta')
 
 
-# # TODO: вынести константы в предварительное объявление
-# fps = 20
-# discr_dt = 0.01
-# bot = Bot(discr_dt)
-#
-# # scene_contours = create_scene()
-# scene = Environment()
-# new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
-# scene.add_object(new_object, movable=True)
-#
-# fig, ax = plt.subplots()
-# ax.set_aspect('equal')
-#
-# lidar_fig, lidar_ax = plt.subplots()
-# lidar_ax.set_aspect('equal')
-#
-#
-#
-# # # ДВИЖЕНИЕ С ИМЕЮЩЕЙСЯ КАРТОЙ, ОТРАБОТКА ТРАЕКТОРИИ
-# # # Добавление незакартированных препятствий
-# # scene_contours.append(np.asarray([[-4, -4, -3, -3, -4], [4, 3, 3, 4, 4]], dtype=float))
-# # scene_contours.append(np.asarray([[0, -0.5, -0.5, 0, 0], [4, 4, 3.5, 3.5, 4]], dtype=float))
-# # scene_contours.append(np.asarray([[-4, -4.5, -4.5, -4, -4], [0, 0, 0.5, 0.5, 0]], dtype=float))
-# # scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [3, 3, 4, 4, 3]], dtype=float))
-# # scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [-3, -3, -4, -4, -3]], dtype=float))
-# # scene_contours.append(np.asarray([[4, 3.5, 3.5, 4, 4], [-4, -4, -4.5, -4.5, -4]], dtype=float))
-# # scene_contours.append(np.asarray([[-1, 0, 0.5, -1], [-4.7, -4.3, -4.5, -4.7]], dtype=float))
-#
-#
+# TODO: вынести константы в предварительное объявление
+fps = 20  # ЭТО СТРОГО
+discr_dt = 0.025  # 0.01 - 0.1 норм
+bot = Bot(discr_dt)
+# vis = Visualizer()
+# vis = Visualizer(see_scene=False, see_lidar=False)
+
+scene = Environment()
+new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
+scene.add_object(new_object, movable=True)
+
+fig, ax = plt.subplots()
+ax.set_aspect('equal')
+
+lidar_fig, lidar_ax = plt.subplots()
+lidar_ax.set_aspect('equal')
+
+
+c_x, c_y, c_dir = bot.get_current_position()
+bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
+bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
+                          c_y - 0.01 * sin(radians(c_dir))),
+                         bot.radius, 0.02,
+                         angle=c_dir, rotation_point='xy', color='black')
+
+ax.add_patch(bot_img)
+ax.add_patch(bot_nose)
+
+
+# Движение по карте с незнакомыми препятствиями
+map_from_file = read_map('map.csv')
+beams_num = 300
+motion_lin_vel = 2
+sim_lin_vel = 2 * motion_lin_vel
+
+bot.set_position(-4, -4)
+p2p_motion(4, 4, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+wait_for_assignment(bot)
+
+
+
+
+
+
+# ==================================== ПРОИЗВОЛЬНАЯ КАРТА ===========================================
+
+
+# # ДВИЖЕНИЕ С ИМЕЮЩЕЙСЯ КАРТОЙ, ОТРАБОТКА ТРАЕКТОРИИ
+# # Добавление незакартированных препятствий
+# scene_contours.append(np.asarray([[-4, -4, -3, -3, -4], [4, 3, 3, 4, 4]], dtype=float))
+# scene_contours.append(np.asarray([[0, -0.5, -0.5, 0, 0], [4, 4, 3.5, 3.5, 4]], dtype=float))
+# scene_contours.append(np.asarray([[-4, -4.5, -4.5, -4, -4], [0, 0, 0.5, 0.5, 0]], dtype=float))
+# scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [3, 3, 4, 4, 3]], dtype=float))
+# scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [-3, -3, -4, -4, -3]], dtype=float))
+# scene_contours.append(np.asarray([[4, 3.5, 3.5, 4, 4], [-4, -4, -4.5, -4.5, -4]], dtype=float))
+# scene_contours.append(np.asarray([[-1, 0, 0.5, -1], [-4.7, -4.3, -4.5, -4.7]], dtype=float))
+
+
 # # Движение по карте с незнакомыми препятствиями
 # map_from_file = read_map('map.csv')
 # beams_num = 300
 # motion_lin_vel = 2
 # sim_lin_vel = 2 * motion_lin_vel
-#
-# # p2p_motion(4, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
-#
-# p2p_motion(-2, 4, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
-# p2p_motion(-3, -4.2, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
-# p2p_motion(4, -3, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
-# p2p_motion(3.8, 0, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
-# p2p_motion(0, 0, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
+
+# p2p_motion(4, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+
+# p2p_motion(-2, 4, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+# p2p_motion(-3, -4.2, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+# p2p_motion(4, -3, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+# p2p_motion(3.8, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+# p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+# wait_for_assignment(bot)
 
 
 
