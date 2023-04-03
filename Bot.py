@@ -15,9 +15,6 @@ class Bot:
 
         self.DISCR_dT = discr_dt
 
-        self.ready = False  # готовы ли данные о положении к считыванию
-        self.data_sent = False  # посланы ли (считаны) данные о положении
-
         self.dir_g = 0.0
         self.aligned = False
 
@@ -31,12 +28,6 @@ class Bot:
         self.motion_thread = threading.Thread(target=self.move, daemon=True)
 
         self.start()
-
-    # Ожидание посылки данных о движении
-    def wait_for_data_sent(self):
-        while not self.data_sent:
-            time.sleep(self.DISCR_dT)
-        self.data_sent = False
 
     # TODO: производить долю движения постоянно при вызове команды cmd_vel даже с нулевой скоростью в отдельном потоке
     # поток имеет функцию start/stop
