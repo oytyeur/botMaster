@@ -288,3 +288,14 @@ def getLinesSaM(nodes, nodes_idx, pnts, tolerance=0.1):
     return lines_num
 
 
+def get_vectorized_obstacles(obstacles):
+    vect_obstacles = []
+    for obst in obstacles:
+        nodes = np.zeros([2, obst.shape[1]], dtype=float)
+        nodes_idx = []
+        lines_num = getLinesSaM(nodes, nodes_idx, obst, tolerance=0.1)
+        vect_obstacles.append(nodes[:, :lines_num+1])
+
+    return vect_obstacles
+
+
