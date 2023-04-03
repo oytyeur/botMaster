@@ -2,6 +2,8 @@ from math import atan2, sin, cos, degrees, pi, sqrt, radians
 import time
 import threading
 
+import numpy as np
+
 
 class Bot:
     def __init__(self, discr_dt):
@@ -44,6 +46,10 @@ class Bot:
         self.x += self.lin_vel * self.DISCR_dT * cos(radians(self.dir))
         self.y += self.lin_vel * self.DISCR_dT * sin(radians(self.dir))
         self.dir += (self.ang_vel * self.DISCR_dT) % 360.0
+        if self.dir > 180:
+            self.dir -= 360
+        elif not self.dir > -180:
+            self.dir += 360
 
     # процесс движения
     def move(self):
@@ -69,7 +75,6 @@ class Bot:
     # Движение в точку, проверка положения
     # TODO: обавить развороты и против часовой стрелки
     def move_to_pnt_check(self, x_g, y_g, dir_g, lin_vel, fps):
-        # self.ready = True
         dist = sqrt((x_g - self.x) ** 2 + (y_g - self.y) ** 2)
         if dist > 0:
             self.goal_reached = False
@@ -82,16 +87,16 @@ class Bot:
                     self.motion_allowed = True
 
                 else:
-                    if abs(self.dir - path_dir) > 0 and not self.aligned:
-                        self.cmd_vel(0.0, 72.0)
+                    if abs(path_dir - self.dir) > 0 and not self.aligned:
                         # if self.dir > 0 and path_dir < 0:
-                        if path_dir < 0:
-                            path_dir += 360
-                        if not path_dir - self.dir > self.ang_vel * (1/fps):
+                        # if path_dir < 0:
+                        #     path_dir += 360
+                        self.cmd_vel(0.0, 144.0 * np.sign(path_dir - self.dir))
+                        if not abs(path_dir - self.dir) > abs(self.ang_vel * (1/fps)):
                             self.motion_allowed = False
                             self.cmd_vel(0.0, 0.0)
-                            if path_dir > 180:
-                                path_dir -= 360
+                            # if path_dir > 180:
+                            #     path_dir -= 360
                             self.ang_step = True
                     else:
                         self.aligned = True
