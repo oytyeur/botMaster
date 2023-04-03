@@ -24,6 +24,7 @@ def check_potential_collision(vect_obstacles):
 # Движение из точки в точку
 def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100, wanna_watch=True):
     global bot_img, bot_nose
+
     # ax.clear()
     # for obj in scene.objects:
     #     ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
@@ -41,6 +42,8 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
     # plots = []
 
     ax.scatter([x_goal], [y_goal], marker='*', s=100)
+
+    t0 = time.time()
 
     while not bot.goal_reached:
         c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
@@ -63,7 +66,6 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
         for obj in scene.objects:
             if obj.movable:
                 obj.transform(1/fps)
-        # scene.objects[2].transform(1/fps)
 
         bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
         bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
@@ -74,21 +76,11 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
         ax.add_patch(bot_img)
         ax.add_patch(bot_nose)
 
-        # bot_img.remove()
-        # bot_nose.remove()
-        # bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
-        # ax.add_patch(bot_img)
-        # bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
-        #                           c_y - 0.01 * sin(radians(c_dir))),
-        #                          bot.radius, 0.02,
-        #                          angle=c_dir, rotation_point='xy', color='black')
-        # ax.add_patch(bot_nose)
-
         lidar_ax.clear()
 
         frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
 
-        # лучи лидара
+        # # лучи лидара
         # for i in range(frame.shape[1]):
         #     lidar_ax.plot([0.0, frame[0, i]], [0.0, frame[1, i]],
         #                   linewidth=0.1, color='red')
@@ -107,14 +99,6 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
         # # цветные точки после кластеризации
         # lidar_ax.scatter(frame[0, :], frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
 
-        # for obst in obstacles:
-        #     nodes = np.zeros([2, obst.shape[1]], dtype=float)
-        #     nodes_idx = []
-        #     lines_num = getLinesSaM(nodes, nodes_idx, obst, tolerance=0.1)
-        #     for i in range(lines_num):
-        #         lidar_ax.plot([nodes[0, i], nodes[0, i + 1]], [nodes[1, i], nodes[1, i + 1]],
-        #                          linewidth=1.5, color='magenta')
-
         if vect_obstacles:
             for obst in vect_obstacles:
                 for i in range(obst.shape[1]-1):
@@ -125,7 +109,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
         #     vis.visualize(scene, bot, c_x, c_y, c_dir, frame, vect_obstacles)
 
         plt.draw()
-        plt.pause(1/fps)
+        plt.pause(0.001)
 
         if plots:
             for plot in plots:
@@ -137,7 +121,102 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
     bot.goal_reached = False
 
 
+# Движение по команде скорости
+def execute_cmd_vel(x_goal, y_goal, lin_vel, ang_vel, scene, bot, fps, beams_num=100):
+    global bot_img, bot_nose
+
+    bot.cmd_vel(lin_vel, ang_vel)
+
+    goal = [ax.scatter([x_goal], [y_goal], marker='*', s=100, c='green')]
+    t0 = time.time()
+    while time.time() - t0 < 1:
+        c_x, c_y, c_dir = bot.get_current_position()
+
+        plots = []
+        for obj in scene.objects:
+            if not obj.movable:
+                ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
+            else:
+                plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
+                plots.append(plot)
+                obj.transform(1 / fps)
+                if obj.check_agent_collision(bot):
+                    break
+
+        if bot.terminated:
+            if plots:
+                for plot in plots:
+                    plot.remove()
+
+            break
+
+        # for obj in scene.objects:
+        #     if obj.movable:
+        #         obj.transform(1 / fps)
+        #         obj.check_agent_collision(bot)
+
+        bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
+        bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
+                                  c_y - 0.01 * sin(radians(c_dir))),
+                                 bot.radius, 0.02,
+                                 angle=c_dir, rotation_point='xy', color='black')
+
+        ax.add_patch(bot_img)
+        ax.add_patch(bot_nose)
+
+        lidar_ax.clear()
+
+        frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
+        #
+        # clustered = maintain_frame_clustering(frame, eps=0.4)
+        # objects = get_surrounding_objects(frame, clustered)
+        # obstacles = detect_unfamiliar_objects(map_from_file, c_x, c_y, c_dir, objects, threshold=0.1)
+        # vect_obstacles = get_vectorized_obstacles(obstacles)
+
+        vect_obstacles = analyze(c_x, c_y, c_dir, frame)
+
+        # ось лидара
+        lidar_ax.scatter([0.0], [0.0], s=10, color='red')
+
+        # серые точки кадра
+        lidar_ax.scatter(frame[0, :], frame[1, :], s=4, marker='o', color='gray')
+
+        # # цветные точки после кластеризации
+        # lidar_ax.scatter(frame[0, :], frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
+
+        if vect_obstacles:
+            for obst in vect_obstacles:
+                for i in range(obst.shape[1] - 1):
+                    lidar_ax.plot([obst[0, i], obst[0, i + 1]], [obst[1, i], obst[1, i + 1]],
+                                  linewidth=1.5, color='magenta')
+
+        # if wanna_watch:
+        #     vis.visualize(scene, bot, c_x, c_y, c_dir, frame, vect_obstacles)
+
+        plt.draw()
+        plt.pause(0.01)
+
+        if plots:
+            for plot in plots:
+                plot.remove()
+
+        bot_img.remove()
+        bot_nose.remove()
+
+    goal[0].remove()
+
+
+def analyze(c_x, c_y, c_dir, frame):
+    clustered = maintain_frame_clustering(frame, eps=0.4)
+    objects = get_surrounding_objects(frame, clustered)
+    obstacles = detect_unfamiliar_objects(map_from_file, c_x, c_y, c_dir, objects, threshold=0.1)
+    vect_obstacles = get_vectorized_obstacles(obstacles)
+
+    return vect_obstacles
+
+
 def wait_for_assignment(bot, scene, wanna_watch=True):
+    global bot_img, bot_nose
     c_x, c_y, c_dir = bot.get_current_position()
 
     print('Waiting for assignment')
@@ -148,25 +227,18 @@ def wait_for_assignment(bot, scene, wanna_watch=True):
     assigned = False
     t0 = time.time()
 
-    plots = []
-
     while not assigned:
         plots = []
         for obj in scene.objects:
-            plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
-            if obj.movable:
+            if not obj.movable:
+                ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
+            else:
+                plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
                 plots.append(plot)
 
         for obj in scene.objects:
             if obj.movable:
                 obj.transform(1 / fps)
-
-            # print(plot)
-            # for i in range(obj.nodes_coords.shape[1]-1):
-            #     line, = ax.plot(obj.nodes_coords[0, i], obj.nodes_coords[1, i])
-            #     print(line)
-                # if obj.movable:
-                #     plots.append(line)
 
         lidar_ax.clear()
         frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
@@ -203,16 +275,18 @@ def wait_for_assignment(bot, scene, wanna_watch=True):
         plt.draw()
         plt.pause(1 / fps)
 
+        # bot_img.remove()
+        # bot_nose.remove()
+
         if plots:
             for plot in plots:
                 plot.remove()
 
-        if time.time() - t0 > 0.25:
+        if time.time() - t0 > 0.1:
             assigned = True
             ax.clear()
 
-        # time.sleep(1/fps)
-
+        time.sleep(1/fps)
 
 # def get_single_frame():
 #     map_from_file = read_map('map.csv')
@@ -257,17 +331,19 @@ def wait_for_assignment(bot, scene, wanna_watch=True):
 #             lidar_ax.plot([nodes[0, i], nodes[0, i + 1]], [nodes[1, i], nodes[1, i + 1]],
 #                              linewidth=1.5, color='magenta')
 
+
 def get_random_task(bot):
     # global scene
+    bot.terminated = False
     bot.set_position(uniform(-0.5, 0), uniform(-2.0, 2.0))
-    x_goal = uniform(8.5, 9.5)
+    x_goal = uniform(9.25, 9.75)
     y_goal = uniform(-2.0, 2.0)
-    n_obj = int(uniform(5, 7))
+    n_obj = int(uniform(5, 8))
     scene = Environment()
     x_offset = 2.0
     for i in range(n_obj):
-        s = uniform(0.5, 0.75)
-        x = x_offset + uniform(0.75, 1.5)
+        s = uniform(0.3, 0.7)
+        x = x_offset + uniform(0.75, 1)
         y = uniform(-2.5, 2.5)
         lin_vel = uniform(-4.0, 4.0)
         new_obj_nodes = np.asarray([[x - s/2, x + s/2, x + s/2, x - s/2, x - s/2],
@@ -275,11 +351,17 @@ def get_random_task(bot):
         scene.add_object(new_obj_nodes, lin_vel=lin_vel, movable=True)
         x_offset = x
 
-    p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=300)
+    # p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=300)
+    # wait_for_assignment(bot, scene)
+    for j in range(5):
+        bot_lin_vel = uniform(0.5, 4)
+        bot_ang_vel = uniform(-90, 90)
+        execute_cmd_vel(x_goal, y_goal, bot_lin_vel, bot_ang_vel, scene, bot, fps, beams_num=300)
+        if bot.terminated:
+            break
     wait_for_assignment(bot, scene)
-    # for obj in scene.objects:
-    #     if obj.movable:
-    #         scene.objects.remove(obj)
+    bot.terminated = False
+
 
 
 # vis = Visualizer()
@@ -298,8 +380,6 @@ ax.set_aspect('equal')
 lidar_fig, lidar_ax = plt.subplots()
 lidar_ax.set_aspect('equal')
 
-# ax.add_patch(bot_img)
-# ax.add_patch(bot_nose)
 
 
 # Движение по карте с незнакомыми препятствиями
@@ -322,7 +402,7 @@ bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
                          bot.radius, 0.02,
                          angle=c_dir, rotation_point='xy', color='black')
 
-for i in range(50):
+for ep in range(50):
     get_random_task(bot)
 
 

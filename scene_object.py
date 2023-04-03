@@ -36,3 +36,14 @@ class SceneObject:
         else:
             if not np.max(self.nodes_coords[1, :]) > -2.5:
                 self.nodes_coords[1, :] += 5.75
+
+    # Проверка на столкновение с объектом
+    def check_agent_collision(self, bot):
+        c_x, c_y, _ = bot.get_current_position()
+        for idx in range(self.nodes_coords.shape[1] - 1):
+            # TODO: НЕВЕРНАЯ МЕТРИКА: ЭТО РАССТОЯНИЕ ТОЛЬКО ДО УГЛОВ, А НАДО ДО СТОРОН
+            if sqrt((c_x - self.nodes_coords[0, idx]) ** 2 + (c_y - self.nodes_coords[1, idx]) ** 2) < bot.radius + 0.05:
+                bot.terminated = True
+                print('TERMINATED: Obstacle collision')
+        return bot.terminated
+

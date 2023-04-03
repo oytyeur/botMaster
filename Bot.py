@@ -25,6 +25,8 @@ class Bot:
         self.motion_allowed = False
         self.goal_reached = False
 
+        self.terminated = False
+
         self.lock = threading.Lock()
         self.motion_thread = threading.Thread(target=self.move, daemon=True)
 
@@ -45,6 +47,9 @@ class Bot:
     def move_dt(self):
         self.x += self.lin_vel * self.DISCR_dT * cos(radians(self.dir))
         self.y += self.lin_vel * self.DISCR_dT * sin(radians(self.dir))
+        if not self.terminated:
+            if self.check_map_collision():
+                self.cmd_vel(0.0, 0.0)
         self.dir += (self.ang_vel * self.DISCR_dT) % 360.0
         if self.dir > 180:
             self.dir -= 360
@@ -54,7 +59,8 @@ class Bot:
     # процесс движения
     def move(self):
         while True:
-            time.sleep(self.DISCR_dT)
+            # time.sleep(self.DISCR_dT)
+            time.sleep(0.001)
             if self.motion_allowed:  # Плевать он хотел на это условие
                 self.move_dt()
 
@@ -122,3 +128,12 @@ class Bot:
             print("Goal reached")
 
         return self.get_current_position()
+
+    # Проверка столкновения с закартированными объектами
+    def check_map_collision(self):
+        c_x, c_y, _ = self.get_current_position()
+        if not (-0.75 < c_x < 9.75) or not (-2.25 < c_y < 2.25):
+            self.terminated = True
+            print('TERMINATED: Wall collision')
+        return self.terminated
+
