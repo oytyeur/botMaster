@@ -34,33 +34,47 @@ from visualization import Visualizer
 # Движение из точки в точку
 def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100, wanna_watch=True):
     global bot_img, bot_nose
-    ax.clear()
-    for obj in scene.objects:
-        ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
-
-    # c_x, c_y, c_dir = bot.get_current_position()
+    # ax.clear()
+    # for obj in scene.objects:
+    #     ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
     #
-    # bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
-    # bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
-    #                           c_y - 0.01 * sin(radians(c_dir))),
-    #                          bot.radius, 0.02,
-    #                          angle=c_dir, rotation_point='xy', color='black')
-
-    ax.add_patch(bot_img)
-    ax.add_patch(bot_nose)
+    # # c_x, c_y, c_dir = bot.get_current_position()
+    # #
+    # # bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
+    # # bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
+    # #                           c_y - 0.01 * sin(radians(c_dir))),
+    # #                          bot.radius, 0.02,
+    # #                          angle=c_dir, rotation_point='xy', color='black')
+    #
+    # ax.add_patch(bot_img)
+    # ax.add_patch(bot_nose)
 
     while not bot.goal_reached:
         c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
+        # print(c_x, c_y, c_dir)
 
-        bot_img.remove()
-        bot_nose.remove()
+        ax.clear()
+        for obj in scene.objects:
+            ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
+
         bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
-        ax.add_patch(bot_img)
         bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
                                   c_y - 0.01 * sin(radians(c_dir))),
                                  bot.radius, 0.02,
                                  angle=c_dir, rotation_point='xy', color='black')
+
+        ax.add_patch(bot_img)
         ax.add_patch(bot_nose)
+
+        # bot_img.remove()
+        # bot_nose.remove()
+        # bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
+        # ax.add_patch(bot_img)
+        # bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
+        #                           c_y - 0.01 * sin(radians(c_dir))),
+        #                          bot.radius, 0.02,
+        #                          angle=c_dir, rotation_point='xy', color='black')
+        # ax.add_patch(bot_nose)
 
         lidar_ax.clear()
 
@@ -111,15 +125,14 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
 def wait_for_assignment(bot, wanna_watch=True):
     c_x, c_y, c_dir = bot.get_current_position()
 
-    ax.clear()
-    for obj in scene.objects:
-        ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
-
-    ax.add_patch(bot_img)
-    ax.add_patch(bot_nose)
     print('Waiting for assignment')
 
     while True:
+        ax.clear()
+        for obj in scene.objects:
+            ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
+        ax.add_patch(bot_img)
+        ax.add_patch(bot_nose)
 
         lidar_ax.clear()
         frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
@@ -203,15 +216,19 @@ def wait_for_assignment(bot, wanna_watch=True):
 #                              linewidth=1.5, color='magenta')
 
 
-# TODO: вынести константы в предварительное объявление
+# TODO: при возникновении тупняков на визуализации подобрать параметры
 fps = 20  # ЭТО СТРОГО
-discr_dt = 0.025  # 0.01 - 0.1 норм
+discr_dt = 0.01  # 0.01 - 0.1 норм?
+
 bot = Bot(discr_dt)
 # vis = Visualizer()
 # vis = Visualizer(see_scene=False, see_lidar=False)
 
 scene = Environment()
 new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
+scene.add_object(new_object, movable=True)
+
+new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [-2.25, -2.25, -1.75, -1.75, -2.25]], dtype=float)
 scene.add_object(new_object, movable=True)
 
 fig, ax = plt.subplots()
@@ -238,8 +255,10 @@ beams_num = 300
 motion_lin_vel = 2
 sim_lin_vel = 2 * motion_lin_vel
 
-bot.set_position(-4, -4)
-p2p_motion(4, 4, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+
+bot.set_position(4, 4)
+p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+p2p_motion(-4, -4, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
 wait_for_assignment(bot)
 
 
