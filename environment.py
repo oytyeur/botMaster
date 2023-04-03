@@ -31,8 +31,8 @@ class Environment:
         # contours.append(obst_2)
 
     # добавить объект
-    def add_object(self, nodes_coords, lin_vel=0, ang_vel=0, dir=0.0, movable=False):
-        obj = SceneObject(nodes_coords, lin_vel, ang_vel, dir, movable)
+    def add_object(self, nodes_coords, lin_vel=0, ang_vel=0, dir=0.0, agent_radius=0.0, movable=False):
+        obj = SceneObject(nodes_coords, lin_vel, ang_vel, dir, agent_radius, movable)
         self.objects.append(obj)
 
     # удалить объект

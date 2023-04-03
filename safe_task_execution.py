@@ -348,7 +348,7 @@ def get_random_task(bot):
         lin_vel = uniform(-4.0, 4.0)
         new_obj_nodes = np.asarray([[x - s/2, x + s/2, x + s/2, x - s/2, x - s/2],
                                     [y + s/2, y + s/2, y - s/2, y - s/2, y + s/2]], dtype=float)
-        scene.add_object(new_obj_nodes, lin_vel=lin_vel, movable=True)
+        scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=bot.radius, movable=True)
         x_offset = x
 
     # p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=300)
