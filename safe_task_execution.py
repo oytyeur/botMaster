@@ -16,28 +16,18 @@ from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_sur
 from visualization import Visualizer
 
 
-
-# TODO аспределение по файлам-классам:
-# Класс сцены: создание, редактирование, движение объектов
-# Класс робота: движение, планирование пути
-# Класс лидара: получение данных, обработка, детекция препятствий (векторизацию сюда же)
-# Класс визуализатора: отрисовка, окна и пр.
-
-
-# TODO: вероятно, нужда в отдельном процессе есть только у лидара - ждать его кадра,
-# движение робота можно осуществить, передав ему время вычислений текущей обстановки и прочего, то есть
-# робот получил новое положение, в этом положении происходят получение кадра, обработка, принятие решения
-# Хотя в процессе движения за время обработки данных он может проехать гораздо дальше положения, в котором шли вычисления
-# Можно замерять время вычислений и после принятия решения о движении при
+# Вернуть индексы
+def check_potential_collision(vect_obstacles):
+    return 0
 
 
 # Движение из точки в точку
 def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100, wanna_watch=True):
     global bot_img, bot_nose
-    ax.clear()
-    for obj in scene.objects:
-        ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
-
+    # ax.clear()
+    # for obj in scene.objects:
+    #     ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
+    #
     # c_x, c_y, c_dir = bot.get_current_position()
     #
     # bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
@@ -45,22 +35,54 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
     #                           c_y - 0.01 * sin(radians(c_dir))),
     #                          bot.radius, 0.02,
     #                          angle=c_dir, rotation_point='xy', color='black')
+    #
+    # ax.add_patch(bot_img)
+    # ax.add_patch(bot_nose)
+    # plots = []
 
-    ax.add_patch(bot_img)
-    ax.add_patch(bot_nose)
+    ax.scatter([x_goal], [y_goal], marker='*', s=100)
 
     while not bot.goal_reached:
         c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
+        # print(c_x, c_y, c_dir)
 
-        bot_img.remove()
-        bot_nose.remove()
+        # ax.clear()
+        # for obj in scene.objects:
+        #     ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
+
+        # if plots:
+        #     for plot in plots:
+        #         plot.remove()
+
+        plots = []
+        for obj in scene.objects:
+            plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
+            if obj.movable:
+                plots.append(plot)
+
+        for obj in scene.objects:
+            if obj.movable:
+                obj.transform(1/fps)
+        # scene.objects[2].transform(1/fps)
+
         bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
-        ax.add_patch(bot_img)
         bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
                                   c_y - 0.01 * sin(radians(c_dir))),
                                  bot.radius, 0.02,
                                  angle=c_dir, rotation_point='xy', color='black')
+
+        ax.add_patch(bot_img)
         ax.add_patch(bot_nose)
+
+        # bot_img.remove()
+        # bot_nose.remove()
+        # bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
+        # ax.add_patch(bot_img)
+        # bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
+        #                           c_y - 0.01 * sin(radians(c_dir))),
+        #                          bot.radius, 0.02,
+        #                          angle=c_dir, rotation_point='xy', color='black')
+        # ax.add_patch(bot_nose)
 
         lidar_ax.clear()
 
@@ -105,21 +127,46 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
         plt.draw()
         plt.pause(1/fps)
 
+        if plots:
+            for plot in plots:
+                plot.remove()
+
+        bot_img.remove()
+        bot_nose.remove()
+
     bot.goal_reached = False
 
 
-def wait_for_assignment(bot, wanna_watch=True):
+def wait_for_assignment(bot, scene, wanna_watch=True):
     c_x, c_y, c_dir = bot.get_current_position()
 
-    ax.clear()
-    for obj in scene.objects:
-        ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
+    print('Waiting for assignment')
 
     ax.add_patch(bot_img)
     ax.add_patch(bot_nose)
-    print('Waiting for assignment')
 
-    while True:
+    assigned = False
+    t0 = time.time()
+
+    plots = []
+
+    while not assigned:
+        plots = []
+        for obj in scene.objects:
+            plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
+            if obj.movable:
+                plots.append(plot)
+
+        for obj in scene.objects:
+            if obj.movable:
+                obj.transform(1 / fps)
+
+            # print(plot)
+            # for i in range(obj.nodes_coords.shape[1]-1):
+            #     line, = ax.plot(obj.nodes_coords[0, i], obj.nodes_coords[1, i])
+            #     print(line)
+                # if obj.movable:
+                #     plots.append(line)
 
         lidar_ax.clear()
         frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
@@ -155,6 +202,14 @@ def wait_for_assignment(bot, wanna_watch=True):
 
         plt.draw()
         plt.pause(1 / fps)
+
+        if plots:
+            for plot in plots:
+                plot.remove()
+
+        if time.time() - t0 > 0.25:
+            assigned = True
+            ax.clear()
 
         # time.sleep(1/fps)
 
@@ -202,23 +257,62 @@ def wait_for_assignment(bot, wanna_watch=True):
 #             lidar_ax.plot([nodes[0, i], nodes[0, i + 1]], [nodes[1, i], nodes[1, i + 1]],
 #                              linewidth=1.5, color='magenta')
 
+def get_random_task(bot):
+    # global scene
+    bot.set_position(uniform(-0.5, 0), uniform(-2.0, 2.0))
+    x_goal = uniform(8.5, 9.5)
+    y_goal = uniform(-2.0, 2.0)
+    n_obj = int(uniform(5, 7))
+    scene = Environment()
+    x_offset = 2.0
+    for i in range(n_obj):
+        s = uniform(0.5, 0.75)
+        x = x_offset + uniform(0.75, 1.5)
+        y = uniform(-2.5, 2.5)
+        lin_vel = uniform(-4.0, 4.0)
+        new_obj_nodes = np.asarray([[x - s/2, x + s/2, x + s/2, x - s/2, x - s/2],
+                                    [y + s/2, y + s/2, y - s/2, y - s/2, y + s/2]], dtype=float)
+        scene.add_object(new_obj_nodes, lin_vel=lin_vel, movable=True)
+        x_offset = x
 
-# TODO: вынести константы в предварительное объявление
-fps = 20  # ЭТО СТРОГО
-discr_dt = 0.025  # 0.01 - 0.1 норм
-bot = Bot(discr_dt)
+    p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=300)
+    wait_for_assignment(bot, scene)
+    # for obj in scene.objects:
+    #     if obj.movable:
+    #         scene.objects.remove(obj)
+
+
 # vis = Visualizer()
 # vis = Visualizer(see_scene=False, see_lidar=False)
 
-scene = Environment()
-new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
-scene.add_object(new_object, movable=True)
+# scene = Environment()
+# new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
+# scene.add_object(new_object, lin_vel=-1.0, ang_vel=0.5, dir=-pi, movable=True)
+#
+# new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [-2.25, -2.25, -1.75, -1.75, -2.25]], dtype=float)
+# scene.add_object(new_object, lin_vel=1.0, ang_vel=0.5, dir=0.0, movable=True)
 
 fig, ax = plt.subplots()
 ax.set_aspect('equal')
 
 lidar_fig, lidar_ax = plt.subplots()
 lidar_ax.set_aspect('equal')
+
+# ax.add_patch(bot_img)
+# ax.add_patch(bot_nose)
+
+
+# Движение по карте с незнакомыми препятствиями
+map_from_file = read_map('map.csv')
+beams_num = 300
+# motion_lin_vel = 1
+# sim_lin_vel = 2 * motion_lin_vel
+
+# TODO: при возникновении тупняков на визуализации подобрать параметры
+fps = 20  # ЭТО СТРОГО
+discr_dt = 0.01  # 0.01 - 0.1 норм?
+
+bot = Bot(discr_dt)
 
 
 c_x, c_y, c_dir = bot.get_current_position()
@@ -228,19 +322,15 @@ bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
                          bot.radius, 0.02,
                          angle=c_dir, rotation_point='xy', color='black')
 
-ax.add_patch(bot_img)
-ax.add_patch(bot_nose)
+for i in range(50):
+    get_random_task(bot)
 
 
-# Движение по карте с незнакомыми препятствиями
-map_from_file = read_map('map.csv')
-beams_num = 300
-motion_lin_vel = 2
-sim_lin_vel = 2 * motion_lin_vel
-
-bot.set_position(-4, -4)
-p2p_motion(4, 4, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
-wait_for_assignment(bot)
+# # p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+#
+#
+# p2p_motion(4, 4, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+# wait_for_assignment(bot)
 
 
 

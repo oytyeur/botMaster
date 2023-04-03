@@ -18,27 +18,6 @@ from vectorization import getLines, getLinesSaM
 from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_surrounding_objects, detect_unfamiliar_objects
 from environment import Environment
 
-# TODO аспределение по файлам-классам:
-# Класс сцены: создание, редактирование, движение объектов
-# Класс робота: движение, планирование пути
-# Класс лидара: получение данных, обработка, детекция препятствий (векторизацию сюда же)
-# Класс визуализатора: отрисовка, окна и пр.
-
-# matplotlib.use('TkAgg')
-
-# # Построение сцены
-# def create_scene():
-#     contours = []
-#     room = np.asarray([[5, -5, -5, 5, 5], [5, 5, -5, -5, 5]], dtype=float)
-#     contours.append(room)
-#
-#     obst_1 = np.asarray([[0.5, 2, 2, 0.5, 0.5], [2, 2, 4.4, 4.4, 2]], dtype=float)
-#     obst_2 = np.asarray([[-2, 0, 1, 0, -2, -2], [0, -1, -1, -2, -2, 0]], dtype=float)
-#     # contours.append(obst_1)
-#     # contours.append(obst_2)
-#
-#     return contours
-
 
 # TODO обрезать дальность обзора до метров 5, например
 # Дополнение карты новым кадром
@@ -297,12 +276,17 @@ def generate_map(bot, scene, fps=10):
     mapping_lin_vel = 2
     sim_lin_vel = 2 * mapping_lin_vel
 
-    p2p_motion(-1.5, 4.5, 0, sim_lin_vel, scene, fps, initial=True)
-    p2p_motion(-4, -4.2, 0, sim_lin_vel, scene, fps)
-    p2p_motion(4, -3, 0, sim_lin_vel, scene, fps)
-    p2p_motion(4.75, 4.75, 0, sim_lin_vel, scene, fps)
-    p2p_motion(3, 0, 0, sim_lin_vel, scene, fps)
+    p2p_motion(5, -2, 0, sim_lin_vel, scene, fps, initial=True)
+    p2p_motion(8, 0, 0, sim_lin_vel, scene, fps)
+    p2p_motion(5, 2, 0, sim_lin_vel, scene, fps)
     p2p_motion(0, 0, 0, sim_lin_vel, scene, fps)
+
+    # p2p_motion(-1.5, 4.5, 0, sim_lin_vel, scene, fps, initial=True)
+    # p2p_motion(-4, -4.2, 0, sim_lin_vel, scene, fps)
+    # p2p_motion(4, -3, 0, sim_lin_vel, scene, fps)
+    # p2p_motion(4.75, 4.75, 0, sim_lin_vel, scene, fps)
+    # p2p_motion(3, 0, 0, sim_lin_vel, scene, fps)
+    # p2p_motion(0, 0, 0, sim_lin_vel, scene, fps)
     save_map(map)
 
 
@@ -341,6 +325,8 @@ def generate_map(bot, scene, fps=10):
 # # ПОКАЗАТЬ КАРТУ
 # map_from_file = read_map('map.csv')
 # vectorize_map(map_from_file)
+#
+# plt.show()
 
 
 
@@ -368,5 +354,3 @@ def generate_map(bot, scene, fps=10):
 # # # # i = 2
 # # # # map_ax.scatter(obstacles[i][0, :], obstacles[i][1, :], s=5, marker='o', color='red')
 # # # # # map_ax.scatter(objects[0, :], objects[1, :], s=1, c=clustered.labels_, cmap='tab10')
-#
-# plt.show()

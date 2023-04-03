@@ -123,7 +123,8 @@ def get_surrounding_objects(lidar_frame, clust_output):
             continue
         else:
             fr = ind
-            ind += 1
+            if ind < len(sorted_clusters) - 1:
+                ind += 1
             while sorted_clusters[ind] == sorted_clusters[fr]:
                 ind += 1
                 if not ind < len(sorted_clusters):
@@ -176,4 +177,6 @@ def detect_unfamiliar_objects(map, c_x, c_y, c_dir, objects, threshold=0.1):
             if count > 0:
                 unfamiliar_objects.append(inv(B2W_T) @ new_obj[:, :count])
 
-    return unfamiliar_objects  # TODO: векторизованные на выходе
+    return unfamiliar_objects
+
+
