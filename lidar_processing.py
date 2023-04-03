@@ -18,7 +18,7 @@ from vectorization import getLines, getLinesSaM
 
 
 # Формирование кадра лидара
-def get_lidar_frame(c_x, c_y, c_dir, contours, beams_num=100, noise_std=0.1, lidar_angle=(pi - 0.001)):
+def get_lidar_frame(c_x, c_y, c_dir, objects, beams_num=100, noise_std=0.1, lidar_angle=(pi - 0.001)):
     d_ang = lidar_angle / (beams_num - 1)
     beam_angle_0 = (lidar_angle + pi) / 2
     cart_lidar_frame = np.zeros([3, beams_num], dtype=float)
@@ -33,11 +33,11 @@ def get_lidar_frame(c_x, c_y, c_dir, contours, beams_num=100, noise_std=0.1, lid
                         [0, 0, 1]], dtype=float)
     W2B_T = inv(B2W_T)
 
-    for cnt in contours:
-        seg_num = cnt.shape[1] - 1
+    for obj in objects:
+        seg_num = obj.nodes_coords.shape[1] - 1
         for i in range(seg_num):
-            seg_st_W2B = W2B_T @ np.asarray([cnt[0, i], cnt[1, i], 1]).T
-            seg_end_W2B = W2B_T @ np.asarray([cnt[0, i+1], cnt[1, i+1], 1]).T
+            seg_st_W2B = W2B_T @ np.asarray([obj.nodes_coords[0, i], obj.nodes_coords[1, i], 1]).T
+            seg_end_W2B = W2B_T @ np.asarray([obj.nodes_coords[0, i+1], obj.nodes_coords[1, i+1], 1]).T
             dx = seg_end_W2B[0] - seg_st_W2B[0]
             if dx == 0.0:
                 seg_k = inf

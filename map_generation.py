@@ -16,6 +16,7 @@ import csv
 from Bot import Bot
 from vectorization import getLines, getLinesSaM
 from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_surrounding_objects, detect_unfamiliar_objects
+from environment import Environment
 
 # TODO аспределение по файлам-классам:
 # Класс сцены: создание, редактирование, движение объектов
@@ -25,18 +26,18 @@ from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_sur
 
 # matplotlib.use('TkAgg')
 
-# Построение сцены
-def create_scene():
-    contours = []
-    room = np.asarray([[5, -5, -5, 5, 5], [5, 5, -5, -5, 5]], dtype=float)
-    contours.append(room)
-
-    obst_1 = np.asarray([[0.5, 2, 2, 0.5, 0.5], [2, 2, 4.4, 4.4, 2]], dtype=float)
-    obst_2 = np.asarray([[-2, 0, 1, 0, -2, -2], [0, -1, -1, -2, -2, 0]], dtype=float)
-    # contours.append(obst_1)
-    # contours.append(obst_2)
-
-    return contours
+# # Построение сцены
+# def create_scene():
+#     contours = []
+#     room = np.asarray([[5, -5, -5, 5, 5], [5, 5, -5, -5, 5]], dtype=float)
+#     contours.append(room)
+#
+#     obst_1 = np.asarray([[0.5, 2, 2, 0.5, 0.5], [2, 2, 4.4, 4.4, 2]], dtype=float)
+#     obst_2 = np.asarray([[-2, 0, 1, 0, -2, -2], [0, -1, -1, -2, -2, 0]], dtype=float)
+#     # contours.append(obst_1)
+#     # contours.append(obst_2)
+#
+#     return contours
 
 
 # TODO обрезать дальность обзора до метров 5, например
@@ -191,11 +192,11 @@ def wait_for_bot_data(bot):
 
 
 # Движение из точки в точку
-def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=True, initial=False):
+def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100, mapping=True, initial=False):
     global map
     ax.clear()
-    for cnt in contours:
-        ax.plot(*cnt)
+    for obj in scene.objects:
+        ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
 
     c_x, c_y, c_dir = bot.get_current_position()
 
@@ -226,7 +227,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=Tr
         ax.add_patch(bot_nose)
 
         lidar_ax.clear()
-        frame, _ = get_lidar_frame(c_x, c_y, c_dir, contours, beams_num)
+        frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
 
         # лучи лидара
         # for i in range(frame.shape[1]):
@@ -292,19 +293,17 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100, mapping=Tr
 #                              linewidth=1.5, color='magenta')
 
 
-def generate_map(bot, fps=10):
+def generate_map(bot, scene, fps=10):
     # ПРЕДВАРИТЕЛЬНОЕ КАРТИРОВАНИЕ
     mapping_lin_vel = 2
     sim_lin_vel = 2 * mapping_lin_vel
-    t0 = time.time()
-    # p2p_motion(4, 0, 0, sim_lin_vel, fps, initial=True)
 
-    p2p_motion(-1.5, 4.5, 0, sim_lin_vel, fps, initial=True)
-    p2p_motion(-4, -4.2, 0, sim_lin_vel, fps)
-    p2p_motion(4, -3, 0, sim_lin_vel, fps)
-    p2p_motion(4.75, 4.75, 0, sim_lin_vel, fps)
-    p2p_motion(3, 0, 0, sim_lin_vel, fps)
-    p2p_motion(0, 0, 0, sim_lin_vel, fps)
+    p2p_motion(-1.5, 4.5, 0, sim_lin_vel, scene, fps, initial=True)
+    p2p_motion(-4, -4.2, 0, sim_lin_vel, scene, fps)
+    p2p_motion(4, -3, 0, sim_lin_vel, scene, fps)
+    p2p_motion(4.75, 4.75, 0, sim_lin_vel, scene, fps)
+    p2p_motion(3, 0, 0, sim_lin_vel, scene, fps)
+    p2p_motion(0, 0, 0, sim_lin_vel, scene, fps)
     save_map(map)
 
 
@@ -313,6 +312,11 @@ def generate_map(bot, fps=10):
 #
 # # TODO: вынести константы в предвырительное объявление
 # map = []
+#
+# scene = Environment()
+# new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
+# scene.add_object(new_object, movable=True)
+#
 # fps = 20
 # discr_dt = 0.01
 # bot = Bot(discr_dt)
@@ -324,11 +328,10 @@ def generate_map(bot, fps=10):
 # lidar_ax.set_aspect('equal')
 #
 # # ПРОИЗВЕСТИ КАРТИРОВАНИЕ
-# contours = create_scene()
-# generate_map(bot, fps=fps)
-#
-#
-#
+# # contours = create_scene()
+# generate_map(bot, scene, fps=fps)
+
+
 # # # ПОКАЗАТЬ КАДР В НЕКОТОРОЙ ПОЗИЦИИ РОБОТА
 # # # bot.x = 3
 # # # bot.y = 1

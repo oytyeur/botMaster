@@ -10,7 +10,8 @@ import csv
 
 from Bot import Bot
 from vectorization import getLines, getLinesSaM
-from map_generation import create_scene, read_map
+from map_generation import read_map
+from environment import Environment
 from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_surrounding_objects, detect_unfamiliar_objects
 
 
@@ -29,10 +30,10 @@ from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_sur
 
 
 # Движение из точки в точку
-def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100):
+def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100):
     ax.clear()
-    for cnt in scene_contours:
-        ax.plot(*cnt)
+    for obj in scene.objects:
+        ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :])
 
     c_x, c_y, c_dir = bot.get_current_position()
 
@@ -62,7 +63,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100):
 
         lidar_ax.clear()
         # t0 = time.time()
-        frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene_contours, beams_num)
+        frame, _ = get_lidar_frame(c_x, c_y, c_dir, scene.objects, beams_num)
 
         # лучи лидара
         # for i in range(frame.shape[1]):
@@ -141,45 +142,48 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, fps, beams_num=100):
 #                              linewidth=1.5, color='magenta')
 
 
-# TODO: вынести константы в предвырительное объявление
-fps = 20
-discr_dt = 0.01
-bot = Bot(discr_dt)
-
-scene_contours = create_scene()
-
-fig, ax = plt.subplots()
-ax.set_aspect('equal')
-
-lidar_fig, lidar_ax = plt.subplots()
-lidar_ax.set_aspect('equal')
-
-
-
-# # ДВИЖЕНИЕ С ИМЕЮЩЕЙСЯ КАРТОЙ, ОТРАБОТКА ТРАЕКТОРИИ
-# # Добавление незакартированных препятствий
-# scene_contours.append(np.asarray([[-4, -4, -3, -3, -4], [4, 3, 3, 4, 4]], dtype=float))
-# scene_contours.append(np.asarray([[0, -0.5, -0.5, 0, 0], [4, 4, 3.5, 3.5, 4]], dtype=float))
-# scene_contours.append(np.asarray([[-4, -4.5, -4.5, -4, -4], [0, 0, 0.5, 0.5, 0]], dtype=float))
-# scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [3, 3, 4, 4, 3]], dtype=float))
-# scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [-3, -3, -4, -4, -3]], dtype=float))
-# scene_contours.append(np.asarray([[4, 3.5, 3.5, 4, 4], [-4, -4, -4.5, -4.5, -4]], dtype=float))
-# scene_contours.append(np.asarray([[-1, 0, 0.5, -1], [-4.7, -4.3, -4.5, -4.7]], dtype=float))
-
-
-# Движение по карте с незнакомыми препятствиями
-map_from_file = read_map('map.csv')
-beams_num = 300
-motion_lin_vel = 1
-sim_lin_vel = 2 * motion_lin_vel
-
-# p2p_motion(4, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
-
-p2p_motion(-2, 4, 0, sim_lin_vel, fps, beams_num=beams_num)
-p2p_motion(-3, -4.2, 0, sim_lin_vel, fps, beams_num=beams_num)
-p2p_motion(4, -3, 0, sim_lin_vel, fps, beams_num=beams_num)
-p2p_motion(3.8, 0, 0, sim_lin_vel, fps, beams_num=beams_num)
-p2p_motion(0, 0, 0, sim_lin_vel, fps, beams_num=beams_num)
+# # TODO: вынести константы в предварительное объявление
+# fps = 20
+# discr_dt = 0.01
+# bot = Bot(discr_dt)
+#
+# # scene_contours = create_scene()
+# scene = Environment()
+# new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
+# scene.add_object(new_object, movable=True)
+#
+# fig, ax = plt.subplots()
+# ax.set_aspect('equal')
+#
+# lidar_fig, lidar_ax = plt.subplots()
+# lidar_ax.set_aspect('equal')
+#
+#
+#
+# # # ДВИЖЕНИЕ С ИМЕЮЩЕЙСЯ КАРТОЙ, ОТРАБОТКА ТРАЕКТОРИИ
+# # # Добавление незакартированных препятствий
+# # scene_contours.append(np.asarray([[-4, -4, -3, -3, -4], [4, 3, 3, 4, 4]], dtype=float))
+# # scene_contours.append(np.asarray([[0, -0.5, -0.5, 0, 0], [4, 4, 3.5, 3.5, 4]], dtype=float))
+# # scene_contours.append(np.asarray([[-4, -4.5, -4.5, -4, -4], [0, 0, 0.5, 0.5, 0]], dtype=float))
+# # scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [3, 3, 4, 4, 3]], dtype=float))
+# # scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [-3, -3, -4, -4, -3]], dtype=float))
+# # scene_contours.append(np.asarray([[4, 3.5, 3.5, 4, 4], [-4, -4, -4.5, -4.5, -4]], dtype=float))
+# # scene_contours.append(np.asarray([[-1, 0, 0.5, -1], [-4.7, -4.3, -4.5, -4.7]], dtype=float))
+#
+#
+# # Движение по карте с незнакомыми препятствиями
+# map_from_file = read_map('map.csv')
+# beams_num = 300
+# motion_lin_vel = 2
+# sim_lin_vel = 2 * motion_lin_vel
+#
+# # p2p_motion(4, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
+#
+# p2p_motion(-2, 4, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
+# p2p_motion(-3, -4.2, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
+# p2p_motion(4, -3, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
+# p2p_motion(3.8, 0, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
+# p2p_motion(0, 0, 0, sim_lin_vel, scene, fps, beams_num=beams_num)
 
 
 
