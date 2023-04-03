@@ -15,10 +15,19 @@ import csv
 
 
 class SceneObject:
-    def __init__(self, nodes_coords, lin_vel=0.0, ang_vel=0.0, dir=0.0, movable=False):
+    def __init__(self, nodes_coords, lin_vel=0.0, ang_vel=0.0, dir=0.0, agent_radius=0.0, movable=False):
         self.nodes_coords = np.zeros([3, nodes_coords.shape[1]], dtype=float)
         self.nodes_coords[:2, :] = nodes_coords
         self.nodes_coords[2, :] = 1.0
+        self.N = self.nodes_coords.shape[1] - 1
+
+        # ТОЛЬКО ДЛЯ ПРАВИЛЬНЫХ МНОГОУГОЛЬНИКОВ (сейчас работаем с квадратами),
+        # потом можно инициализировать по координатам центра, числу и длине сторон
+        self.c_x, self.c_y = np.mean(self.nodes_coords[0, :self.N]), np.mean(self.nodes_coords[1, :self.N])
+        self.a = sqrt((self.nodes_coords[0, 0] - self.nodes_coords[0, 1]) ** 2 +
+                      (self.nodes_coords[1, 0] - self.nodes_coords[1, 1]) ** 2)
+        self.unsafe_radius = self.a / (2 * sin(pi / self.N)) + agent_radius + 0.05
+
         self.movable = movable
 
         if movable:
@@ -29,10 +38,24 @@ class SceneObject:
     # Движение объекта
     def transform(self, dt):
         self.nodes_coords[1, :] += self.lin_vel * dt
+        # self.c_x += self.lin_vel * dt
+        self.c_y += self.lin_vel * dt
         if self.lin_vel > 0:
             if not np.min(self.nodes_coords[1, :]) < 2.5:
                 self.nodes_coords[1, :] -= 5.75
-
+                # self.c_x -= 5.75
+                self.c_y -= 5.75
         else:
             if not np.max(self.nodes_coords[1, :]) > -2.5:
                 self.nodes_coords[1, :] += 5.75
+                # self.c_x += 5.75
+                self.c_y += 5.75
+
+    # Проверка на столкновение с объектом
+    def check_agent_collision(self, bot):
+        bot_c_x, bot_c_y, _ = bot.get_current_position()
+        if sqrt((bot_c_x - self.c_x) ** 2 + (bot_c_y - self.c_y) ** 2) < self.unsafe_radius:
+            bot.terminated = True
+            print('TERMINATED: Obstacle collision')
+        return bot.terminated
+
