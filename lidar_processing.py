@@ -123,7 +123,8 @@ def get_surrounding_objects(lidar_frame, clust_output):
             continue
         else:
             fr = ind
-            ind += 1
+            if ind < len(sorted_clusters) - 1:
+                ind += 1
             while sorted_clusters[ind] == sorted_clusters[fr]:
                 ind += 1
                 if not ind < len(sorted_clusters):

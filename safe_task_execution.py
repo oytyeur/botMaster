@@ -40,7 +40,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
     # ax.add_patch(bot_nose)
     # plots = []
 
-    ax.scatter([x_goal], [y_goal], marker='*', s=30)
+    ax.scatter([x_goal], [y_goal], marker='*', s=100)
 
     while not bot.goal_reached:
         c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
@@ -137,7 +137,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
     bot.goal_reached = False
 
 
-def wait_for_assignment(bot, wanna_watch=True):
+def wait_for_assignment(bot, scene, wanna_watch=True):
     c_x, c_y, c_dir = bot.get_current_position()
 
     print('Waiting for assignment')
@@ -145,9 +145,12 @@ def wait_for_assignment(bot, wanna_watch=True):
     ax.add_patch(bot_img)
     ax.add_patch(bot_nose)
 
+    assigned = False
+    t0 = time.time()
+
     plots = []
 
-    while True:
+    while not assigned:
         plots = []
         for obj in scene.objects:
             plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
@@ -204,6 +207,9 @@ def wait_for_assignment(bot, wanna_watch=True):
             for plot in plots:
                 plot.remove()
 
+        if time.time() - t0 > 0.25:
+            assigned = True
+            ax.clear()
 
         # time.sleep(1/fps)
 
@@ -252,31 +258,34 @@ def wait_for_assignment(bot, wanna_watch=True):
 #                              linewidth=1.5, color='magenta')
 
 def get_random_task(bot):
-    global scene
-    bot.set_position(uniform(-0.5, 1.0), uniform(1.99, 2.0))
+    # global scene
+    bot.set_position(uniform(-0.5, 0), uniform(-2.0, 2.0))
     x_goal = uniform(8.5, 9.5)
-    y_goal = uniform(-2.0, -1.99)
-    n_obj = int(uniform(3, 5))
-    # scene = Environment()
-    x_offset = 3.0
+    y_goal = uniform(-2.0, 2.0)
+    n_obj = int(uniform(5, 7))
+    scene = Environment()
+    x_offset = 2.0
     for i in range(n_obj):
         s = uniform(0.5, 0.75)
         x = x_offset + uniform(0.75, 1.5)
         y = uniform(-2.5, 2.5)
-        lin_vel = uniform(-4.0, 0.0)
+        lin_vel = uniform(-4.0, 4.0)
         new_obj_nodes = np.asarray([[x - s/2, x + s/2, x + s/2, x - s/2, x - s/2],
                                     [y + s/2, y + s/2, y - s/2, y - s/2, y + s/2]], dtype=float)
         scene.add_object(new_obj_nodes, lin_vel=lin_vel, movable=True)
         x_offset = x
 
-    p2p_motion(x_goal, y_goal, 0, 2, scene, bot, fps, beams_num=300)
-    wait_for_assignment(bot)
+    p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=300)
+    wait_for_assignment(bot, scene)
+    # for obj in scene.objects:
+    #     if obj.movable:
+    #         scene.objects.remove(obj)
 
 
 # vis = Visualizer()
 # vis = Visualizer(see_scene=False, see_lidar=False)
 
-scene = Environment()
+# scene = Environment()
 # new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
 # scene.add_object(new_object, lin_vel=-1.0, ang_vel=0.5, dir=-pi, movable=True)
 #
@@ -313,7 +322,8 @@ bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
                          bot.radius, 0.02,
                          angle=c_dir, rotation_point='xy', color='black')
 
-get_random_task(bot)
+for i in range(50):
+    get_random_task(bot)
 
 
 # # p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)

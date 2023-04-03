@@ -35,8 +35,9 @@ class Environment:
         obj = SceneObject(nodes_coords, lin_vel, ang_vel, dir, movable)
         self.objects.append(obj)
 
-    # # удалить объект
-    # def remove_object(self):
+    # удалить объект
+    def remove_object(self, obj):
+        self.objects.remove(obj)
 
 
     # # обновление сцены

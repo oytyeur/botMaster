@@ -29,5 +29,10 @@ class SceneObject:
     # Движение объекта
     def transform(self, dt):
         self.nodes_coords[1, :] += self.lin_vel * dt
-        if not np.max(self.nodes_coords[1, :]) > -2.5:
-            self.nodes_coords[1, :] += 5
+        if self.lin_vel > 0:
+            if not np.min(self.nodes_coords[1, :]) < 2.5:
+                self.nodes_coords[1, :] -= 5.75
+
+        else:
+            if not np.max(self.nodes_coords[1, :]) > -2.5:
+                self.nodes_coords[1, :] += 5.75
