@@ -11,19 +11,14 @@ class Bot:
         self.y = 0.0
         self.dir = 0.0
 
-        self.temp_x = 0.0
-        self.temp_y = 0.0
-        self.temp_dir = 0.0
-
         self.lin_vel = 0.0
         self.ang_vel = 0.0
 
         self.DISCR_dT = discr_dt
 
-        self.ready = False  # готовы ли данные о положении к считыванию
-        self.data_sent = False  # посланы ли (считаны) данные о положении
+        # self.ready = False  # готовы ли данные о положении к считыванию
+        # self.data_sent = False  # посланы ли (считаны) данные о положении
 
-        self.dir_g = 0.0
         self.aligned = False
 
         self.ang_step = False
@@ -32,17 +27,16 @@ class Bot:
         self.motion_allowed = False
         self.goal_reached = False
 
-        self.lock = threading.Lock()
+        # self.lock = threading.Lock()
         self.motion_thread = threading.Thread(target=self.move, daemon=True)
-        # self.motion_thread = Process(target=self.move, daemon=True)
 
         self.start()
 
-    # Ожидание посылки данных о движении
-    def wait_for_data_sent(self):
-        while not self.data_sent:
-            time.sleep(self.DISCR_dT)
-        self.data_sent = False
+    # # Ожидание посылки данных о движении
+    # def wait_for_data_sent(self):
+    #     while not self.data_sent:
+    #         time.sleep(self.DISCR_dT)
+    #     self.data_sent = False
 
     # TODO: производить долю движения постоянно при вызове команды cmd_vel даже с нулевой скоростью в отдельном потоке
     # поток имеет функцию start/stop
@@ -52,23 +46,16 @@ class Bot:
         self.cmd_vel(0.0, 0.0)
         self.motion_thread.start()
 
-
     # остановить робота вообще
     def stop(self):
         self.motion_allowed = False
         self.cmd_vel(0.0, 0.0)
-
 
     # Доля движения с заданной скоростью
     def move_dt(self):
         self.x += self.lin_vel * self.DISCR_dT * cos(radians(self.dir))
         self.y += self.lin_vel * self.DISCR_dT * sin(radians(self.dir))
         self.dir += (self.ang_vel * self.DISCR_dT) % 360.0
-        # if self.ready:
-        #     self.x = self.x
-        #     self.y = self.y
-        #     self.dir = self.dir
-        #     self.ready = False
 
     # процесс движения
     def move(self):
@@ -87,11 +74,6 @@ class Bot:
         self.x = x
         self.y = y
         self.dir = dir
-
-        self.temp_x = x
-        self.temp_y = y
-        self.temp_dir = dir
-
 
     def get_current_position(self):
         return self.x, self.y, self.dir
