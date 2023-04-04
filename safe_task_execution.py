@@ -24,6 +24,7 @@ def check_potential_collision(vect_obstacles):
 # Движение из точки в точку
 def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100, wanna_watch=True):
     global bot_img, bot_nose
+    bot.aligned = False
 
     # ax.clear()
     # for obj in scene.objects:
@@ -41,8 +42,8 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
     # ax.add_patch(bot_nose)
     # plots = []
 
-    ax.scatter([x_goal], [y_goal], marker='*', s=100)
-
+    goal = [ax.scatter([x_goal], [y_goal], marker='*', s=100, c='green')]
+    # ax.plot([10.5, -1.5, -1.5, 10.5, 10.5], [3.5, 3.5, -3.5, -3.5, 3.5], color='white')
     t0 = time.time()
 
     while not bot.goal_reached:
@@ -59,13 +60,20 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
 
         plots = []
         for obj in scene.objects:
-            plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
-            if obj.movable:
+            if not obj.movable:
+                ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
+            else:
+                plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
                 plots.append(plot)
+                obj.transform(1 / fps)
+                if obj.check_agent_collision(bot):
+                    break
 
-        for obj in scene.objects:
-            if obj.movable:
-                obj.transform(1/fps)
+        if bot.terminated:
+            if plots:
+                for plot in plots:
+                    plot.remove()
+            break
 
         bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
         bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
@@ -85,10 +93,12 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
         #     lidar_ax.plot([0.0, frame[0, i]], [0.0, frame[1, i]],
         #                   linewidth=0.1, color='red')
 
-        clustered = maintain_frame_clustering(frame, eps=0.4)
-        objects = get_surrounding_objects(frame, clustered)
-        obstacles = detect_unfamiliar_objects(map_from_file, c_x, c_y, c_dir, objects, threshold=0.1)
-        vect_obstacles = get_vectorized_obstacles(obstacles)
+        # clustered = maintain_frame_clustering(frame, eps=0.4)
+        # objects = get_surrounding_objects(frame, clustered)
+        # obstacles = detect_unfamiliar_objects(map_from_file, c_x, c_y, c_dir, objects, threshold=0.1)
+        # vect_obstacles = get_vectorized_obstacles(obstacles)
+
+        vect_obstacles = analyze(c_x, c_y, c_dir, frame)
 
         # ось лидара
         lidar_ax.scatter([0.0], [0.0], s=10, color='red')
@@ -118,6 +128,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
         bot_img.remove()
         bot_nose.remove()
 
+    goal[0].remove()
     bot.goal_reached = False
 
 
@@ -128,6 +139,7 @@ def execute_cmd_vel(x_goal, y_goal, lin_vel, ang_vel, scene, bot, fps, beams_num
     bot.cmd_vel(lin_vel, ang_vel)
 
     goal = [ax.scatter([x_goal], [y_goal], marker='*', s=100, c='green')]
+
     t0 = time.time()
     while time.time() - t0 < 1:
         c_x, c_y, c_dir = bot.get_current_position()
@@ -147,7 +159,6 @@ def execute_cmd_vel(x_goal, y_goal, lin_vel, ang_vel, scene, bot, fps, beams_num
             if plots:
                 for plot in plots:
                     plot.remove()
-
             break
 
         # for obj in scene.objects:
@@ -194,7 +205,7 @@ def execute_cmd_vel(x_goal, y_goal, lin_vel, ang_vel, scene, bot, fps, beams_num
         #     vis.visualize(scene, bot, c_x, c_y, c_dir, frame, vect_obstacles)
 
         plt.draw()
-        plt.pause(0.01)
+        plt.pause(0.001)
 
         if plots:
             for plot in plots:
@@ -248,10 +259,12 @@ def wait_for_assignment(bot, scene, wanna_watch=True):
         #     lidar_ax.plot([0.0, frame[0, i]], [0.0, frame[1, i]],
         #                   linewidth=0.1, color='red')
 
-        clustered = maintain_frame_clustering(frame, eps=0.4)
-        objects = get_surrounding_objects(frame, clustered)
-        obstacles = detect_unfamiliar_objects(map_from_file, c_x, c_y, c_dir, objects, threshold=0.1)
-        vect_obstacles = get_vectorized_obstacles(obstacles)
+        # clustered = maintain_frame_clustering(frame, eps=0.4)
+        # objects = get_surrounding_objects(frame, clustered)
+        # obstacles = detect_unfamiliar_objects(map_from_file, c_x, c_y, c_dir, objects, threshold=0.1)
+        # vect_obstacles = get_vectorized_obstacles(obstacles)
+
+        vect_obstacles = analyze(c_x, c_y, c_dir, frame)
 
         # if wanna_watch:
         #     vis.visualize(scene, bot, c_x, c_y, c_dir, frame, vect_obstacles)
@@ -286,7 +299,7 @@ def wait_for_assignment(bot, scene, wanna_watch=True):
             assigned = True
             ax.clear()
 
-        time.sleep(1/fps)
+        # time.sleep(1/fps)
 
 # def get_single_frame():
 #     map_from_file = read_map('map.csv')
@@ -332,14 +345,15 @@ def wait_for_assignment(bot, scene, wanna_watch=True):
 #                              linewidth=1.5, color='magenta')
 
 
-def get_random_task(bot):
+def execute_random_task(bot):
     # global scene
-    bot.terminated = False
-    bot.set_position(uniform(-0.5, 0), uniform(-2.0, 2.0))
+    # bot.terminated = False
+    bot.set_position(uniform(-0.5, 0), uniform(-2.0, 2.0), uniform(-45.0, 45.0))
     x_goal = uniform(9.25, 9.75)
     y_goal = uniform(-2.0, 2.0)
     n_obj = int(uniform(5, 8))
     scene = Environment()
+    ax.plot([10.5, -1.5, -1.5, 10.5, 10.5], [3.5, 3.5, -3.5, -3.5, 3.5], color='white')
     x_offset = 2.0
     for i in range(n_obj):
         s = uniform(0.3, 0.7)
@@ -351,17 +365,17 @@ def get_random_task(bot):
         scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=bot.radius, movable=True)
         x_offset = x
 
-    # p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=300)
-    # wait_for_assignment(bot, scene)
-    for j in range(5):
-        bot_lin_vel = uniform(0.5, 4)
-        bot_ang_vel = uniform(-90, 90)
-        execute_cmd_vel(x_goal, y_goal, bot_lin_vel, bot_ang_vel, scene, bot, fps, beams_num=300)
-        if bot.terminated:
-            break
+    # # cmd_vel task
+    # for j in range(5):
+    #     bot_lin_vel = uniform(0.5, 4)
+    #     bot_ang_vel = uniform(-90, 90)
+    #     execute_cmd_vel(x_goal, y_goal, bot_lin_vel, bot_ang_vel, scene, bot, fps, beams_num=300)
+    #     if bot.terminated:
+    #         break
+
+    p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=300)
     wait_for_assignment(bot, scene)
     bot.terminated = False
-
 
 
 # vis = Visualizer()
@@ -401,9 +415,10 @@ bot_nose = plt.Rectangle((c_x + 0.01 * sin(radians(c_dir)),
                           c_y - 0.01 * sin(radians(c_dir))),
                          bot.radius, 0.02,
                          angle=c_dir, rotation_point='xy', color='black')
-
+dir = 1
 for ep in range(50):
-    get_random_task(bot)
+    execute_random_task(bot)
+    dir *= -1
 
 
 # # p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
