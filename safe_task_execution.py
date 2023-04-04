@@ -48,6 +48,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
 
     while not bot.goal_reached:
         c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
+        ax.scatter([c_x], [c_y], s=0.1, c='cyan')
         # print(c_x, c_y, c_dir)
 
         # ax.clear()
@@ -119,7 +120,7 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, bot, fps, beams_num=100
         #     vis.visualize(scene, bot, c_x, c_y, c_dir, frame, vect_obstacles)
 
         plt.draw()
-        plt.pause(0.001)
+        plt.pause(1/fps)
 
         if plots:
             for plot in plots:
@@ -143,6 +144,7 @@ def execute_cmd_vel(x_goal, y_goal, lin_vel, ang_vel, scene, bot, fps, beams_num
     t0 = time.time()
     while time.time() - t0 < 1:
         c_x, c_y, c_dir = bot.get_current_position()
+        ax.scatter([c_x], [c_y], s=0.1, c='cyan')
 
         plots = []
         for obj in scene.objects:
@@ -229,6 +231,7 @@ def analyze(c_x, c_y, c_dir, frame):
 def wait_for_assignment(bot, scene, wanna_watch=True):
     global bot_img, bot_nose
     c_x, c_y, c_dir = bot.get_current_position()
+
 
     print('Waiting for assignment')
 
@@ -365,15 +368,15 @@ def execute_random_task(bot):
         scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=bot.radius, movable=True)
         x_offset = x
 
-    # # cmd_vel task
-    # for j in range(5):
-    #     bot_lin_vel = uniform(0.5, 4)
-    #     bot_ang_vel = uniform(-90, 90)
-    #     execute_cmd_vel(x_goal, y_goal, bot_lin_vel, bot_ang_vel, scene, bot, fps, beams_num=300)
-    #     if bot.terminated:
-    #         break
+    # cmd_vel task
+    for j in range(5):
+        bot_lin_vel = uniform(0.5, 4)
+        bot_ang_vel = uniform(-90, 90)
+        execute_cmd_vel(x_goal, y_goal, bot_lin_vel, bot_ang_vel, scene, bot, fps, beams_num=200)
+        if bot.terminated:
+            break
 
-    p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=300)
+    # p2p_motion(x_goal, y_goal, 0, 4, scene, bot, fps, beams_num=200)
     wait_for_assignment(bot, scene)
     bot.terminated = False
 
