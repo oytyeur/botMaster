@@ -59,8 +59,7 @@ class Bot:
     # процесс движения
     def move(self):
         while True:
-            # time.sleep(self.DISCR_dT)
-            time.sleep(0.001)
+            time.sleep(self.DISCR_dT)
             if self.motion_allowed:  # Плевать он хотел на это условие
                 self.move_dt()
 
