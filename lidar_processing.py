@@ -96,7 +96,7 @@ def get_lidar_frame(c_x, c_y, c_dir, objects, beams_num=100, noise_std=0.1, lida
             cart_lidar_frame[0, i] = (dists[i] + dist_noise) * cos(beam_angle_0 - d_ang * i)
             cart_lidar_frame[1, i] = (dists[i] + dist_noise) * sin(beam_angle_0 - d_ang * i)
             polar_lidar_frame[0, i] = beam_angle_0 + i * d_ang
-            polar_lidar_frame[1, i] = dists[i]
+            polar_lidar_frame[1, i] = dists[i] + dist_noise
 
     return cart_lidar_frame, polar_lidar_frame
 

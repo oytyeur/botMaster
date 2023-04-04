@@ -79,7 +79,7 @@ class Bot:
 
     # Движение в точку, проверка положения
     # TODO: обавить развороты и против часовой стрелки
-    def move_to_pnt_check(self, x_g, y_g, dir_g, lin_vel, fps):
+    def move_to_pnt_check(self, x_g, y_g, lin_vel, fps):
         dist = sqrt((x_g - self.x) ** 2 + (y_g - self.y) ** 2)
         if dist > 0:
             self.goal_reached = False
