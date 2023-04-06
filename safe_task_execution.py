@@ -54,6 +54,47 @@ class Process:
     # def update_reward(self):
     #     if not
 
+    # # Запустить новый эпизод
+    def reset(self):
+        self.bot_x = uniform(-0.5, 0)
+        self.bot_y = uniform(-2.0, 2.0)
+        self.bot_dir = uniform(-45.0, 45.0)
+        self.bot.set_position(self.bot_x, self.bot_y, self.bot_dir)
+        self.goal_x = uniform(9.25, 9.75)
+        self.goal_y = uniform(-2.0, 2.0)
+        self.bot.goal_x = self.goal_x
+        self.bot.goal_y = self.goal_y
+        self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
+        self.delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
+        n_obj = int(uniform(1, 4))
+        self.scene = Environment()
+        ax[0].plot([10.5, -1.5, -1.5, 10.5, 10.5], [3.5, 3.5, -3.5, -3.5, 3.5], color='white')
+        x_offset = 8.0
+        for i in range(n_obj):
+            s = uniform(0.3, 0.7)
+            x = x_offset - uniform(0.75, 1)
+            y = uniform(-2.5, 2.5)
+            lin_vel = uniform(-2.0, 2.0)
+            new_obj_nodes = np.asarray([[x - s / 2, x + s / 2, x + s / 2, x - s / 2, x - s / 2],
+                                        [y + s / 2, y + s / 2, y - s / 2, y - s / 2, y + s / 2]], dtype=float)
+            self.scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=self.bot.radius, movable=True)
+            x_offset = x
+
+        self.cart_lidar_frame, self.polar_lidar_frame = \
+            get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
+
+        # self.state = np.zeros([1, self.beams_num+7], dtype=float)
+        self.reward = 0.0
+
+        self.bot.terminated = False
+        self.bot.goal_reached = False
+
+        v_max = 2
+        w = degrees(v_max * 2 * sin(radians(self.delta_path_dir)) / self.dist_to_goal)
+        self.bot.cmd_vel(v_max, w)
+
+        return self.get_state()
+
     # Шаг симуляции
     def step(self, lin_vel, ang_vel):
         global bot_img, bot_nose
@@ -66,9 +107,9 @@ class Process:
 
         # self.bot_x, self.bot_y, self.bot_dir = self.bot.goal_reached_check(self.goal_x, self.goal_y, threshold=0.05)
         self.bot_x, self.bot_y, self.bot_dir = self.bot.get_current_position()
-        if self.bot.goal_reached:
-            self.reward += 10000
-            return self.get_state(), self.reward, True
+        # if self.bot.goal_reached:
+        #     self.reward += 10000
+        #     return self.get_state(), self.reward, True
 
         plots = []
         for obj in self.scene.objects:
@@ -138,67 +179,29 @@ class Process:
         bot_nose.remove()
         goal[0].remove()
 
-        # if not self.bot.goal_reached:
-        #     delta_dir = abs(degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir)
-        #     d = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
-        #
-        #     if delta_dir < 10:
-        #         self.reward += 5
-        #         if d / self.dist_to_goal < 0.99:
-        #             self.reward += 10
-        #             self.dist_to_goal = d
-        #         else:
-        #             self.reward += 0.1
-        #     else:
-        #         self.reward -= 10
-        #
-        # else:
-        #     self.reward += 10000
-        # if self.bot.terminated:
-        #     self.reward -= 10000
+        if not self.bot.goal_reached:
+            delta_dir = abs(degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir)
+            d = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
+
+            if delta_dir < 5:
+                self.reward += 5
+                # if d / self.dist_to_goal < 0.99:
+                #     self.reward += 10
+                #     self.dist_to_goal = d
+                # else:
+                #     self.reward += 0.1
+            else:
+                self.reward -= 10
+
+        else:
+            self.reward += 10000
+
+        if self.bot.terminated:
+            self.reward -= 10000
 
         return self.get_state(), self.reward, self.bot.terminated or self.bot.goal_reached
 
-    # # Запустить новый эпизод
-    def reset(self):
-        self.bot_x = uniform(-0.5, 0)
-        self.bot_y = uniform(-2.0, 2.0)
-        self.bot_dir = uniform(-45.0, 45.0)
-        self.bot.set_position(self.bot_x, self.bot_y, self.bot_dir)
-        self.goal_x = uniform(9.25, 9.75)
-        self.goal_y = uniform(-2.0, 2.0)
-        self.bot.goal_x = self.goal_x
-        self.bot.goal_y = self.goal_y
-        self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
-        self.delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
-        n_obj = int(uniform(1, 4))
-        self.scene = Environment()
-        ax[0].plot([10.5, -1.5, -1.5, 10.5, 10.5], [3.5, 3.5, -3.5, -3.5, 3.5], color='white')
-        x_offset = 8.0
-        for i in range(n_obj):
-            s = uniform(0.3, 0.7)
-            x = x_offset - uniform(0.75, 1)
-            y = uniform(-2.5, 2.5)
-            lin_vel = uniform(-2.0, 2.0)
-            new_obj_nodes = np.asarray([[x - s / 2, x + s / 2, x + s / 2, x - s / 2, x - s / 2],
-                                        [y + s / 2, y + s / 2, y - s / 2, y - s / 2, y + s / 2]], dtype=float)
-            self.scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=self.bot.radius, movable=True)
-            x_offset = x
 
-        self.cart_lidar_frame, self.polar_lidar_frame = \
-            get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
-
-        # self.state = np.zeros([1, self.beams_num+7], dtype=float)
-        self.reward = 0.0
-
-        self.bot.terminated = False
-        self.bot.goal_reached = False
-
-        v_max = 2
-        w = degrees(v_max * 2 * sin(radians(self.delta_path_dir)) / self.dist_to_goal)
-        self.bot.cmd_vel(v_max, w)
-
-        return self.get_state()
 
     # Движение из точки в точку
     def p2p_motion(self, lin_vel):
@@ -438,15 +441,18 @@ class Process:
 
     def execute_random_task(self):
         self.reset()
-        v_max = 2
+        v = 2
         d = self.dist_to_goal
         d_dir = self.delta_path_dir
-        w = degrees(v_max * 2 * sin(radians(d_dir)) / d)
+        w = degrees(v * 2 * sin(radians(d_dir)) / d)
         # cmd_vel task
-        for j in range(100):
-            self.step(v_max, w)
+        c = 0
+        for j in range(120):
+            self.step(v, w)
+            c += 1
             if self.bot.terminated or self.bot.goal_reached:
                 break
+        print(c)
 
         # self.p2p_motion(2.0)
 
@@ -494,12 +500,12 @@ bot_nose = plt.Rectangle((x0 + 0.01 * sin(radians(dir0)),
 
 policy = Policy(111, 2)
 
-for i in range(100):
-    episode_reward = train(process, policy)
-    print(f'Episode {i}: Reward {episode_reward}')
+# for i in range(100):
+#     episode_reward = train(process, policy)
+#     print(f'Episode {i}: Reward {episode_reward}')
 
-# for ep in range(50):
-#     process.execute_random_task()
+for ep in range(50):
+    process.execute_random_task()
 
 
 # # p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
