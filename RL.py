@@ -65,34 +65,35 @@ class Policy(nn.Module):
 
 
 # определяем функцию обучения с подкреплением методом PPO
-def train(env, policy, gamma=0.1, eps_clip=0.5, K=10):
-    state = env.reset()
+def train(process, policy, gamma=0.1, eps_clip=0.5, K=10):
+    state = process.reset()
     done = False
     rewards = []
     log_probs = []
     values = []
     entropies = []
     reward = 0
-    iterations = 300
+    iterations = 100
     while not done and iterations > 0:
         state_tensor = torch.from_numpy(state).float()
         mean, std, value = policy(state_tensor)
         dist = torch.distributions.Normal(mean, std)
         action = dist.sample()
         log_prob = dist.log_prob(action)
-        velocities = action.numpy()
+        delta_vels = action.numpy()
+        lin_vel = state[0] + delta_vels[0]
+        ang_vel = state[1] + delta_vels[1]
+        if lin_vel > 4.0:
+            lin_vel = 4.0
+        elif lin_vel < 0.0:
+            lin_vel = 0.0
 
-        if velocities[0] > 4.0:
-            velocities[0] = 4.0
-        elif velocities[0] < 0.1:
-            velocities[0] = 0.1
+        if ang_vel > 180.0:
+            ang_vel = 180.0
+        elif ang_vel < -180.0:
+            ang_vel = -180.0
 
-        if velocities[1] > 180.0:
-            velocities[1] = 180.0
-        elif velocities[1] < -180.0:
-            velocities[1] = -180.0
-
-        state, reward, done = env.step(*velocities)
+        state, reward, done = process.step(lin_vel, ang_vel)
 
         rewards.append(reward)
         log_probs.append(log_prob)
@@ -120,7 +121,7 @@ def train(env, policy, gamma=0.1, eps_clip=0.5, K=10):
             ratio = torch.exp(log_prob - log_probs[i])
             surr1 = ratio * G[i]
             surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * G[i]
-            loss = -torch.min(surr1, surr2) + 0.5 * (value - G[i]) ** 2 - 0.01 * dist.entropy()
+            loss = torch.mean((-torch.min(surr1, surr2) + 0.5 * (value - G[i]) ** 2 - 0.01 * dist.entropy()))
 
             policy.optimizer.zero_grad()
             loss.backward()

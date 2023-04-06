@@ -21,7 +21,7 @@ class Process:
     def __init__(self):
         self.dt = 0.01
         self.bot = Bot(self.dt)
-        self.fps = 40
+        self.fps = 20
         self.beams_num = 101
         self.map_from_file = read_map('map.csv')
         self.scene = Environment()
@@ -40,12 +40,11 @@ class Process:
         self.delta_path_dir = 0.0
 
     # Состояние процесса
-    # TODO: добавить кадры с разметкой динамических препятствий 0 1
     def get_state(self):
-        state = np.asarray([self.bot_x, self.bot_y, self.bot_dir,
-                            self.goal_x, self.goal_y, self.dist_to_goal, self.delta_path_dir,
-                            self.bot.lin_vel, self.bot.ang_vel],
-                           dtype=float)
+        state = np.asarray([self.bot.lin_vel, self.bot.ang_vel,
+                            self.bot_x, self.bot_y, self.bot_dir,
+                            self.goal_x, self.goal_y, self.dist_to_goal, self.delta_path_dir],
+                            dtype=float)
         state = np.append(state, self.polar_lidar_frame[1, ::2])  # срез - в нейросеть идёт каждый второй
         state = np.append(state, self.obst_marked_lidar_frame[::2])  # срез меток кадра
         self.obst_marked_lidar_frame = -np.ones([self.beams_num], dtype=float)
@@ -167,7 +166,7 @@ class Process:
         self.goal_y = uniform(-2.0, 2.0)
         self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
         self.delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
-        n_obj = int(uniform(5, 8))
+        n_obj = int(uniform(1, 4))
         self.scene = Environment()
         ax[0].plot([10.5, -1.5, -1.5, 10.5, 10.5], [3.5, 3.5, -3.5, -3.5, 3.5], color='white')
         x_offset = 8.0
@@ -433,10 +432,13 @@ class Process:
 
         # cmd_vel task
         for j in range(100):
-            bot_lin_vel = uniform(0.5, 2)
-            bot_ang_vel = uniform(-90, 90)
+            # bot_lin_vel = uniform(0.5, 2)
+            # bot_ang_vel = uniform(-90, 90)
             # self.execute_cmd_vel(bot_lin_vel, bot_ang_vel)
-            self.step(bot_lin_vel, bot_ang_vel)
+            # TODO: разобраться со стартовой скоростью достижения цели по окружности
+            w = 2 * self.delta_path_dir / 3
+            v = radians(w) * self.dist_to_goal / (2 * sin(radians(self.delta_path_dir) / 2))
+            self.step(v, w)
             if self.bot.terminated:
                 break
 
