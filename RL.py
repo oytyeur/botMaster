@@ -33,12 +33,12 @@ class Policy(nn.Module):
         #     nn.Softplus()])
         # self.value = nn.Linear(100, 1)
         # self.optimizer = optim.Adam(self.parameters(), lr=0.001)
-        self.fc1 = nn.Linear(state_dim, 75)
-        self.fc2 = nn.Linear(75, 50)
-        self.mean_layer = nn.Linear(50, action_dim)
-        self.std_layer = nn.Linear(50, action_dim)
-        self.value_layer1 = nn.Linear(50, 25)
-        self.value_layer2 = nn.Linear(25, 1)
+        self.fc1 = nn.Linear(state_dim, 66)
+        self.fc2 = nn.Linear(66, 45)
+        self.mean_layer = nn.Linear(45, action_dim)
+        self.std_layer = nn.Linear(45, action_dim)
+        self.value_layer1 = nn.Linear(45, 20)
+        self.value_layer2 = nn.Linear(20, 1)
         self.optimizer = optim.Adam(self.parameters(), lr=0.01)
 
     def forward(self, x):
@@ -65,7 +65,7 @@ class Policy(nn.Module):
 
 
 # определяем функцию обучения с подкреплением методом PPO
-def train(process, policy, gamma=0.1, eps_clip=0.5, K=10):
+def train(process, policy, gamma=0.99, eps_clip=0.2, K=1):
     state = process.reset()
     done = False
     rewards = []
@@ -73,7 +73,7 @@ def train(process, policy, gamma=0.1, eps_clip=0.5, K=10):
     values = []
     entropies = []
     reward = 0
-    iterations = 100
+    iterations = 120
     while not done and iterations > 0:
         state_tensor = torch.from_numpy(state).float()
         mean, std, value = policy(state_tensor)
@@ -102,14 +102,14 @@ def train(process, policy, gamma=0.1, eps_clip=0.5, K=10):
         iterations -= 1
 
     R = 0
-    G = []
+    A = []
 
     for reward in reversed(rewards):
         R = reward + gamma * R
-        G.insert(0, R)
+        A.insert(0, R)
 
-    G = torch.tensor(G)
-    G = (G - G.mean()) / (G.std() + 1e-5)
+    A = torch.tensor(A)
+    A = (A - A.mean()) / (A.std() + 1e-5)
 
     for k in range(K):
         for i in range(len(rewards)):
@@ -119,9 +119,9 @@ def train(process, policy, gamma=0.1, eps_clip=0.5, K=10):
             action = dist.sample()
             log_prob = dist.log_prob(action)
             ratio = torch.exp(log_prob - log_probs[i])
-            surr1 = ratio * G[i]
-            surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * G[i]
-            loss = torch.mean((-torch.min(surr1, surr2) + 0.5 * (value - G[i]) ** 2 - 0.01 * dist.entropy()))
+            surr1 = ratio * A[i]
+            surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * A[i]
+            loss = torch.mean(-torch.min(surr1, surr2)) + 0.5 * (value - A[i]) ** 2 - 0.01 * torch.mean(dist.entropy())
 
             policy.optimizer.zero_grad()
             loss.backward()
