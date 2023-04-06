@@ -23,6 +23,8 @@ class Bot:
         self.lin_step = False
 
         self.motion_allowed = False
+
+        self.goal_x, self.goal_y = 0.0, 0.0
         self.goal_reached = False
 
         self.terminated = False
@@ -43,11 +45,16 @@ class Bot:
         self.cmd_vel(0.0, 0.0)
 
     def move_dt(self):
+        if not self.goal_reached:
+            self.goal_reached_check()
+
         self.x += self.lin_vel * self.DISCR_dT * cos(radians(self.dir))
         self.y += self.lin_vel * self.DISCR_dT * sin(radians(self.dir))
+
         if not self.terminated:
             if self.check_map_collision():
                 self.cmd_vel(0.0, 0.0)
+
         self.dir += (self.ang_vel * self.DISCR_dT) % 360.0
         if self.dir > 180:
             self.dir -= 360
@@ -127,12 +134,20 @@ class Bot:
         return self.get_current_position()
 
     # Проверка на достижение целевой точки (для RL)
-    def goal_reached_check(self, x_g, y_g, threshold=0.02):
-        if sqrt((x_g - self.x) ** 2 + (y_g - self.y) ** 2) < threshold:
-            self.goal_reached = True
+    def goal_reached_check(self, threshold=0.02):
+        c_x, c_y, _ = self.get_current_position()
+        d = sqrt((self.goal_x - c_x) ** 2 + (self.goal_y - c_y) ** 2)
+        if d < threshold:
             print("Goal reached")
+            self.goal_reached = True
+            self.cmd_vel(0.0, 0.0)
+            self.x = self.goal_x
+            self.y = self.goal_y
+        #     return True
+        # else:
+        #     return False
 
-        return self.get_current_position()
+        # return self.get_current_position()
 
     # Проверка столкновения с закартированными объектами
     def check_map_collision(self):

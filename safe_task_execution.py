@@ -21,7 +21,7 @@ class Process:
     def __init__(self):
         self.dt = 0.01
         self.bot = Bot(self.dt)
-        self.fps = 20
+        self.fps = 40
         self.beams_num = 101
         self.map_from_file = read_map('map.csv')
         self.scene = Environment()
@@ -64,7 +64,11 @@ class Process:
 
         goal = [ax[0].scatter([self.goal_x], [self.goal_y], marker='*', s=100, c='green')]
 
-        self.bot_x, self.bot_y, self.bot_dir = self.bot.goal_reached_check(self.goal_x, self.goal_y, threshold=0.05)
+        # self.bot_x, self.bot_y, self.bot_dir = self.bot.goal_reached_check(self.goal_x, self.goal_y, threshold=0.05)
+        self.bot_x, self.bot_y, self.bot_dir = self.bot.get_current_position()
+        if self.bot.goal_reached:
+            self.reward += 10000
+            return self.get_state(), self.reward, True
 
         plots = []
         for obj in self.scene.objects:
@@ -104,7 +108,7 @@ class Process:
             self.obst_marked_lidar_frame[obst] = 1.0
 
         # ось лидара
-        ax[1].scatter([0.0], [0.0], s=10, color='red')
+        ax[1].scatter([0.0], [0.0], s=10, color='black')
 
         # серые точки кадра
         ax[1].scatter(self.cart_lidar_frame[0, ::2], self.cart_lidar_frame[1, ::2], s=4, marker='o', color='gray')
@@ -125,7 +129,6 @@ class Process:
 
         plt.draw()
         plt.pause(1 / self.fps)
-        # plt.pause(0.001)
 
         if plots:
             for plot in plots:
@@ -135,24 +138,24 @@ class Process:
         bot_nose.remove()
         goal[0].remove()
 
-        if not self.bot.goal_reached:
-            delta_dir = abs(degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir)
-            d = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
-
-            if delta_dir < 10:
-                self.reward += 5
-                if d / self.dist_to_goal < 0.99:
-                    self.reward += 10
-                    self.dist_to_goal = d
-                else:
-                    self.reward += 0.1
-            else:
-                self.reward -= 10
-
-        else:
-            self.reward += 10000
-        if self.bot.terminated:
-            self.reward -= 10000
+        # if not self.bot.goal_reached:
+        #     delta_dir = abs(degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir)
+        #     d = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
+        #
+        #     if delta_dir < 10:
+        #         self.reward += 5
+        #         if d / self.dist_to_goal < 0.99:
+        #             self.reward += 10
+        #             self.dist_to_goal = d
+        #         else:
+        #             self.reward += 0.1
+        #     else:
+        #         self.reward -= 10
+        #
+        # else:
+        #     self.reward += 10000
+        # if self.bot.terminated:
+        #     self.reward -= 10000
 
         return self.get_state(), self.reward, self.bot.terminated or self.bot.goal_reached
 
@@ -164,6 +167,8 @@ class Process:
         self.bot.set_position(self.bot_x, self.bot_y, self.bot_dir)
         self.goal_x = uniform(9.25, 9.75)
         self.goal_y = uniform(-2.0, 2.0)
+        self.bot.goal_x = self.goal_x
+        self.bot.goal_y = self.goal_y
         self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
         self.delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
         n_obj = int(uniform(1, 4))
@@ -188,6 +193,10 @@ class Process:
 
         self.bot.terminated = False
         self.bot.goal_reached = False
+
+        v_max = 2
+        w = degrees(v_max * 2 * sin(radians(self.delta_path_dir)) / self.dist_to_goal)
+        self.bot.cmd_vel(v_max, w)
 
         return self.get_state()
 
@@ -429,17 +438,14 @@ class Process:
 
     def execute_random_task(self):
         self.reset()
-
+        v_max = 2
+        d = self.dist_to_goal
+        d_dir = self.delta_path_dir
+        w = degrees(v_max * 2 * sin(radians(d_dir)) / d)
         # cmd_vel task
         for j in range(100):
-            # bot_lin_vel = uniform(0.5, 2)
-            # bot_ang_vel = uniform(-90, 90)
-            # self.execute_cmd_vel(bot_lin_vel, bot_ang_vel)
-            # TODO: разобраться со стартовой скоростью достижения цели по окружности
-            w = 2 * self.delta_path_dir / 3
-            v = radians(w) * self.dist_to_goal / (2 * sin(radians(self.delta_path_dir) / 2))
-            self.step(v, w)
-            if self.bot.terminated:
+            self.step(v_max, w)
+            if self.bot.terminated or self.bot.goal_reached:
                 break
 
         # self.p2p_motion(2.0)
@@ -461,9 +467,6 @@ class Process:
 fig, ax = plt.subplots(1, 2)
 ax[0].set_aspect('equal')
 ax[1].set_aspect('equal')
-
-# lidar_fig, lidar_ax = plt.subplots()
-# lidar_ax.set_aspect('equal')
 
 process = Process()
 
@@ -491,12 +494,12 @@ bot_nose = plt.Rectangle((x0 + 0.01 * sin(radians(dir0)),
 
 policy = Policy(111, 2)
 
-# for i in range(100):
-#     episode_reward = train(process, policy)
-#     print(f'Episode {i}: Reward {episode_reward}')
+for i in range(100):
+    episode_reward = train(process, policy)
+    print(f'Episode {i}: Reward {episode_reward}')
 
-for ep in range(50):
-    process.execute_random_task()
+# for ep in range(50):
+#     process.execute_random_task()
 
 
 # # p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
