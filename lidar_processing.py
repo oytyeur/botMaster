@@ -68,7 +68,7 @@ def get_lidar_frame(c_x, c_y, c_dir, objects, beams_num=100, noise_std=0.1, lida
                 beam_b = 0
                 intsec_x, intsec_y = 0.0, 0.0
                 if seg_angles[0] <= beam_angle <= seg_angles[1]:
-                    if (seg_k == beam_k):
+                    if seg_k == beam_k:
                         intsec_x, intsec_y = inf, inf  # прямые параллельны, в т.ч. и если обе вертикальные
                     else:
                         if isinf(beam_k):
@@ -114,11 +114,16 @@ def maintain_frame_clustering(frame, eps=0.4, min_samples=2):
 def get_surrounding_objects(lidar_frame, clust_output):
     objects = []  # сохраняются в виде среза с кадра данных лидара
     sorted_clusters = clust_output.labels_
+    obj_idxs = []
+    idxs_lst = []
+    idx = 0
     ind = 0
     fr = 0
     to = 1
     while ind < len(sorted_clusters):
         if sorted_clusters[ind] < 0:
+            obj_idxs.append([ind])
+            idx += 1
             ind += 1
             continue
         else:
@@ -131,22 +136,32 @@ def get_surrounding_objects(lidar_frame, clust_output):
                     break
             to = ind
             objects.append(lidar_frame[:3, fr:to])
+            obj_idxs.append([i for i in range(fr, to)])
+            idxs_lst.append(idx)
+            idx += 1
         if not ind < len(sorted_clusters):
             break
 
-    return objects
+        # print(len(obj_idxs), len(idxs_lst))
+        # print(obj_idxs, idxs_lst)
+
+    return objects, obj_idxs, idxs_lst
 
 
 # Обнаружение незнакомых препятствий с помощью карты
-def detect_unfamiliar_objects(map, c_x, c_y, c_dir, objects, threshold=0.1):
+def detect_unfamiliar_objects(scene_map, c_x, c_y, c_dir, objects, obj_idxs, idxs_lst, threshold=0.1):
+    obst_idxs = []
     expansion = 0.05
     unfamiliar_objects = []
     B2W_T = np.asarray([[cos(radians(c_dir - 90)), -sin(radians(c_dir - 90)), c_x],
                         [sin(radians(c_dir - 90)), cos(radians(c_dir - 90)), c_y],
                         [0, 0, 1]], dtype=float)
-    trans_map = map.T
-    for object in objects:
-        obj_B2W = B2W_T @ object
+    trans_map = scene_map.T
+    # for obj in objects:
+    for o in range(len(objects)):
+        off = 0
+        obj_B2W = B2W_T @ objects[o]
+        # TODO: ОПТИМИЗИРОВАТЬ ЧЕРЕЗ ВЕКТОРИЗАЦИЮ КАРТЫ
         xmin, ymin = np.min(obj_B2W[0, :]) - expansion, np.min(obj_B2W[1, :]) - expansion
         xmax, ymax = np.max(obj_B2W[0, :]) + expansion, np.max(obj_B2W[1, :]) + expansion
         ind1 = np.all(trans_map[:, :2] >= np.array([xmin, ymin]), axis=1)
@@ -155,15 +170,17 @@ def detect_unfamiliar_objects(map, c_x, c_y, c_dir, objects, threshold=0.1):
         map_roi = trans_map[np.logical_and(ind1, ind2)].T
 
         if map_roi.size == 0:
-            unfamiliar_objects.append(object)
+            unfamiliar_objects.append(objects[o])
+            obst_idxs.append(obj_idxs[idxs_lst[o]])
         else:
             count = 0
             new_obj = np.zeros([3, obj_B2W.shape[1]], dtype=float)
             new_obj[2, :] = 1.0
-            for i in range(obj_B2W.shape[1]):
+            for i in range(obj_B2W.shape[1]):  # TODO: от этот цикл должен быть оптимизирован векторизацией карты
                 j = 0
                 while j < map_roi.shape[1]:
                     if sqrt((obj_B2W[0, i] - map_roi[0, j]) ** 2 + (obj_B2W[1, i] - map_roi[1, j]) ** 2) < threshold:
+                        off += 1
                         break
                     else:
                         j += 1
@@ -173,10 +190,13 @@ def detect_unfamiliar_objects(map, c_x, c_y, c_dir, objects, threshold=0.1):
                     count += 1
                 elif count > 0:
                     unfamiliar_objects.append(inv(B2W_T) @ new_obj[:, :count])
+                    obst_idxs.append(obj_idxs[idxs_lst[o]][off:off+count])
+                    off += count
                     count = 0
             if count > 0:
                 unfamiliar_objects.append(inv(B2W_T) @ new_obj[:, :count])
+                obst_idxs.append(obj_idxs[idxs_lst[o]][off:off+count])
 
-    return unfamiliar_objects
+    return unfamiliar_objects, obst_idxs
 
 
