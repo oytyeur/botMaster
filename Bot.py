@@ -42,8 +42,6 @@ class Bot:
         self.motion_allowed = False
         self.cmd_vel(0.0, 0.0)
 
-    # TODO: РАЗОБРАТЬСЯ
-    # Доля движения с заданной скоростью
     def move_dt(self):
         self.x += self.lin_vel * self.DISCR_dT * cos(radians(self.dir))
         self.y += self.lin_vel * self.DISCR_dT * sin(radians(self.dir))
@@ -123,6 +121,14 @@ class Bot:
                         self.lin_step = True
 
         else:
+            self.goal_reached = True
+            print("Goal reached")
+
+        return self.get_current_position()
+
+    # Проверка на достижение целевой точки (для RL)
+    def goal_reached_check(self, x_g, y_g, threshold=0.02):
+        if sqrt((x_g - self.x) ** 2 + (y_g - self.y) ** 2) < threshold:
             self.goal_reached = True
             print("Goal reached")
 
