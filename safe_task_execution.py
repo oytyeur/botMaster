@@ -7,6 +7,7 @@ from sklearn.cluster import DBSCAN
 import threading
 import time
 import csv
+import torch
 
 from Bot import Bot
 from vectorization import getLinesSaM, get_vectorized_obstacles
@@ -21,8 +22,8 @@ class Process:
     def __init__(self):
         self.dt = 0.01
         self.bot = Bot(self.dt)
-        self.fps = 40
-        self.beams_num = 101
+        self.fps = 30
+        self.beams_num = 103
         self.map_from_file = read_map('map.csv')
         self.scene = Environment()
 
@@ -37,16 +38,17 @@ class Process:
         self.reward = 0.0
         # self.done = not (self.bot.goal_reached or self.bot.terminated)
         self.dist_to_goal = 0.0
+        self.closest = inf
         self.delta_path_dir = 0.0
 
     # Состояние процесса
     def get_state(self):
         state = np.asarray([self.bot.lin_vel, self.bot.ang_vel,
                             self.bot_x, self.bot_y, self.bot_dir,
-                            self.goal_x, self.goal_y, self.dist_to_goal, self.delta_path_dir],
+                            self.goal_x, self.goal_y], #self.dist_to_goal, self.delta_path_dir],
                             dtype=float)
-        state = np.append(state, self.polar_lidar_frame[1, ::2])  # срез - в нейросеть идёт каждый второй
-        state = np.append(state, self.obst_marked_lidar_frame[::2])  # срез меток кадра
+        state = np.append(state, self.polar_lidar_frame[1, ::3])  # срез - в нейросеть идёт каждый второй
+        state = np.append(state, self.obst_marked_lidar_frame[::3])  # срез меток кадра
         self.obst_marked_lidar_frame = -np.ones([self.beams_num], dtype=float)
         return state
 
@@ -57,28 +59,29 @@ class Process:
     # # Запустить новый эпизод
     def reset(self):
         self.bot_x = uniform(-0.5, 0)
-        self.bot_y = uniform(-2.0, 2.0)
-        self.bot_dir = uniform(-45.0, 45.0)
+        self.bot_y = uniform(-0.5, 0.5)
+        self.bot_dir = uniform(-30.0, 30.0)
         self.bot.set_position(self.bot_x, self.bot_y, self.bot_dir)
         self.goal_x = uniform(9.25, 9.75)
         self.goal_y = uniform(-2.0, 2.0)
         self.bot.goal_x = self.goal_x
         self.bot.goal_y = self.goal_y
         self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
+        self.closest = inf
         self.delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
-        n_obj = int(uniform(1, 4))
+        n_obj = int(uniform(4, 5))
         self.scene = Environment()
         ax[0].plot([10.5, -1.5, -1.5, 10.5, 10.5], [3.5, 3.5, -3.5, -3.5, 3.5], color='white')
         x_offset = 8.0
-        for i in range(n_obj):
-            s = uniform(0.3, 0.7)
-            x = x_offset - uniform(0.75, 1)
-            y = uniform(-2.5, 2.5)
-            lin_vel = uniform(-2.0, 2.0)
-            new_obj_nodes = np.asarray([[x - s / 2, x + s / 2, x + s / 2, x - s / 2, x - s / 2],
-                                        [y + s / 2, y + s / 2, y - s / 2, y - s / 2, y + s / 2]], dtype=float)
-            self.scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=self.bot.radius, movable=True)
-            x_offset = x
+        # for i in range(n_obj):
+        #     s = uniform(0.3, 0.7)
+        #     x = x_offset - uniform(0.75, 1)
+        #     y = uniform(-2.5, 2.5)
+        #     lin_vel = uniform(-2.0, 2.0)
+        #     new_obj_nodes = np.asarray([[x - s / 2, x + s / 2, x + s / 2, x - s / 2, x - s / 2],
+        #                                 [y + s / 2, y + s / 2, y - s / 2, y - s / 2, y + s / 2]], dtype=float)
+        #     self.scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=self.bot.radius, movable=True)
+        #     x_offset = x
 
         self.cart_lidar_frame, self.polar_lidar_frame = \
             get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
@@ -89,9 +92,8 @@ class Process:
         self.bot.terminated = False
         self.bot.goal_reached = False
 
-        v_max = 2
-        w = degrees(v_max * 2 * sin(radians(self.delta_path_dir)) / self.dist_to_goal)
-        self.bot.cmd_vel(v_max, w)
+        w = degrees(self.bot.LIN_V_MAX * 2 * sin(radians(self.delta_path_dir)) / self.dist_to_goal)
+        self.bot.cmd_vel(self.bot.LIN_V_MAX, w)
 
         return self.get_state()
 
@@ -112,23 +114,24 @@ class Process:
         #     return self.get_state(), self.reward, True
 
         plots = []
-        for obj in self.scene.objects:
-            if obj.movable:
-                plot, = ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='red')
-                plots.append(plot)
-                obj.transform(1 / self.fps)
-                if obj.check_agent_collision(self.bot):
-                    break
-            else:
-                ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
+        if self.scene.objects:
+            for obj in self.scene.objects:
+                if obj.movable:
+                    plot, = ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='red')
+                    plots.append(plot)
+                    obj.transform(1 / self.fps)
+                    if obj.check_agent_collision(self.bot):
+                        break
+                else:
+                    ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
 
-        if self.bot.terminated:
-            self.reward -= 100
-            if plots:
-                for plot in plots:
-                    plot.remove()
-            goal[0].remove()
-            return self.get_state(), self.reward, True
+        # if self.bot.terminated:
+        #     # self.reward -= 100
+        #     if plots:
+        #         for plot in plots:
+        #             plot.remove()
+        #     goal[0].remove()
+        #     return self.get_state(), self.reward, True
 
         bot_img = plt.Circle((self.bot_x, self.bot_y), self.bot.radius, color='gray')
         bot_nose = plt.Rectangle((self.bot_x + 0.01 * sin(radians(self.bot_dir)),
@@ -180,24 +183,25 @@ class Process:
         goal[0].remove()
 
         if not self.bot.goal_reached:
-            delta_dir = abs(degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir)
-            d = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
+            self.delta_path_dir = abs(degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir)
+            self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
+            if self.dist_to_goal < self.closest:
+                self.closest = self.dist_to_goal
 
-            if delta_dir < 5:
-                self.reward += 5
-                # if d / self.dist_to_goal < 0.99:
-                #     self.reward += 10
-                #     self.dist_to_goal = d
-                # else:
-                #     self.reward += 0.1
-            else:
-                self.reward -= 10
+            self.reward -= self.dist_to_goal ** 2
+            if self.bot.terminated:
+                if self.closest < 2:
+                    if self.closest < 1:
+                        self.reward += (1 - self.closest) * 100000
+                    else:
+                        self.reward += (((2 - self.closest) ** 2) * 100000)
+                else:
+                    self.reward -= 100000
+                # self.reward -= (10000 * self.dist_to_goal ** 2 + 10000)
 
         else:
-            self.reward += 10000
+            self.reward += 200000
 
-        if self.bot.terminated:
-            self.reward -= 10000
 
         return self.get_state(), self.reward, self.bot.terminated or self.bot.goal_reached
 
@@ -498,15 +502,32 @@ bot_nose = plt.Rectangle((x0 + 0.01 * sin(radians(dir0)),
                          angle=dir0, rotation_point='xy', color='black')
 
 
-policy = Policy(111, 2)
+# policy = Policy(77, 2)
+policy = torch.load('policy.pkl')
+policy.eval()
+device = torch.device('cuda')
 
-# for i in range(100):
-#     episode_reward = train(process, policy)
-#     print(f'Episode {i}: Reward {episode_reward}')
+# policy.to(device)
 
-for ep in range(50):
-    process.execute_random_task()
+rewards = []
+for i in range(100):
+    episode_reward = train(process, policy)
+    rewards.append(episode_reward)
+    print(f'Episode {i}: Reward {episode_reward}')
+    if not i % 100 and i > 0:
+        torch.save(policy, 'waypoint_policy.pkl')
+        print('Checkpoint')
 
+# policy.to('cpu')
+torch.save(policy, 'policy.pkl')
+
+# for ep in range(50):
+#     process.execute_random_task()
+
+# for i in range(len(rewards) - 1):
+#     r_ax.plot([rewards[i], rewards[i+1]])
+_, r_ax = plt.subplots()
+r_ax.plot(rewards)
 
 # # p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
 #

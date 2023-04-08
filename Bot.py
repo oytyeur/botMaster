@@ -14,6 +14,7 @@ class Bot:
 
         self.lin_vel = 0.0
         self.ang_vel = 0.0
+        self.LIN_V_MAX = 3
 
         self.DISCR_dT = discr_dt
 
@@ -134,7 +135,7 @@ class Bot:
         return self.get_current_position()
 
     # Проверка на достижение целевой точки (для RL)
-    def goal_reached_check(self, threshold=0.02):
+    def goal_reached_check(self, threshold=0.5):
         c_x, c_y, _ = self.get_current_position()
         d = sqrt((self.goal_x - c_x) ** 2 + (self.goal_y - c_y) ** 2)
         if d < threshold:
