@@ -18,7 +18,7 @@ from vectorization import getLines, getLinesSaM
 
 
 # Формирование кадра лидара
-def get_lidar_frame(c_x, c_y, c_dir, objects, beams_num=100, noise_std=0.1, lidar_angle=(pi - 0.001)):
+def get_lidar_frame(c_x, c_y, c_dir, objects, beams_num=100, noise_std=0.05, lidar_angle=(pi - 0.001)):
     d_ang = lidar_angle / (beams_num - 1)
     beam_angle_0 = (lidar_angle + pi) / 2
     cart_lidar_frame = np.zeros([3, beams_num], dtype=float)
@@ -26,7 +26,7 @@ def get_lidar_frame(c_x, c_y, c_dir, objects, beams_num=100, noise_std=0.1, lida
     polar_lidar_frame = np.zeros([3, beams_num], dtype=float)
     polar_lidar_frame[2, :] = 1
     dists = np.zeros([beams_num], dtype=float)
-    dists[:] = inf
+    dists[:] = 5.0
 
     B2W_T = np.asarray([[cos(radians(c_dir - 90)), -sin(radians(c_dir - 90)), c_x],
                         [sin(radians(c_dir - 90)), cos(radians(c_dir - 90)), c_y],
@@ -86,17 +86,19 @@ def get_lidar_frame(c_x, c_y, c_dir, objects, beams_num=100, noise_std=0.1, lida
                 else:
                     continue
     for i in range(beams_num):
-        dist_noise = normalvariate(0.0, noise_std / 10)
+        dist_noise = normalvariate(0.0, noise_std / 3)
         if isinf(dists[i]):
             cart_lidar_frame[0, i] = 0.0
             cart_lidar_frame[1, i] = 0.0
-            polar_lidar_frame[0, i] = beam_angle_0 + i * d_ang
-            polar_lidar_frame[1, i] = 0.0
+            polar_lidar_frame[0, i] = beam_angle_0 - i * d_ang
+            polar_lidar_frame[1, i] = 5.0
         else:
             cart_lidar_frame[0, i] = (dists[i] + dist_noise) * cos(beam_angle_0 - d_ang * i)
             cart_lidar_frame[1, i] = (dists[i] + dist_noise) * sin(beam_angle_0 - d_ang * i)
-            polar_lidar_frame[0, i] = beam_angle_0 + i * d_ang
+            polar_lidar_frame[0, i] = beam_angle_0 - i * d_ang
             polar_lidar_frame[1, i] = dists[i] + dist_noise
+            if polar_lidar_frame[1, i] > 5.0:  # Добавление предельного расстояния в полярный кадр: для нормировки
+                polar_lidar_frame[1, i] = 5.0
 
     return cart_lidar_frame, polar_lidar_frame
 
@@ -142,9 +144,6 @@ def get_surrounding_objects(lidar_frame, clust_output):
         if not ind < len(sorted_clusters):
             break
 
-        # print(len(obj_idxs), len(idxs_lst))
-        # print(obj_idxs, idxs_lst)
-
     return objects, obj_idxs, idxs_lst
 
 
@@ -157,7 +156,6 @@ def detect_unfamiliar_objects(scene_map, c_x, c_y, c_dir, objects, obj_idxs, idx
                         [sin(radians(c_dir - 90)), cos(radians(c_dir - 90)), c_y],
                         [0, 0, 1]], dtype=float)
     trans_map = scene_map.T
-    # for obj in objects:
     for o in range(len(objects)):
         off = 0
         obj_B2W = B2W_T @ objects[o]

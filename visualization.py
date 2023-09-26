@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 from math import sin, cos, radians, pi, atan2, tan, sqrt, isinf, inf
 
+############# DEPRECATED ###############
+
 class Visualizer:
     def __init__(self, see_scene=True, see_lidar=True):
         self.see_scene = see_scene

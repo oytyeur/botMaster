@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy import sign
 from numpy.linalg import inv
 from math import sin, cos, radians, pi, atan2, tan, sqrt, isinf, inf, degrees
 from random import randint, uniform, normalvariate, random
@@ -9,21 +10,24 @@ import time
 import csv
 import torch
 
+import RL
 from Bot import Bot
 from vectorization import getLinesSaM, get_vectorized_obstacles
 from map_generation import read_map
 from environment import Environment
 from lidar_processing import get_lidar_frame, maintain_frame_clustering, get_surrounding_objects, detect_unfamiliar_objects
 from visualization import Visualizer
-from RL import Policy, train
+from RL import Value, train, PolicyNew
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 class Process:
     def __init__(self):
         self.dt = 0.01
         self.bot = Bot(self.dt)
-        self.fps = 30
-        self.beams_num = 103
+        self.fps = 10
+        self.beams_num = 128
         self.map_from_file = read_map('map.csv')
         self.scene = Environment()
 
@@ -33,85 +37,103 @@ class Process:
         self.bot_x, self.bot_y, self.bot_dir = self.bot.get_current_position()
         self.cart_lidar_frame = np.zeros([3, self.beams_num], dtype=float)
         self.polar_lidar_frame = np.zeros([3, self.beams_num], dtype=float)
-        self.obst_marked_lidar_frame = -np.ones([self.beams_num], dtype=float)
-        # self.state = np.zeros([1, self.beams_num+7], dtype=float)
-        self.reward = 0.0
-        # self.done = not (self.bot.goal_reached or self.bot.terminated)
+        self.total_reward = 0.0
         self.dist_to_goal = 0.0
+        self.prev_dist_to_goal = 0.0
         self.closest = inf
+        self.prev_delta_path_dir = 0.0
         self.delta_path_dir = 0.0
+        self.is_obst = False
+        self.temp_goal_dir = 0.0
 
     # Состояние процесса
     def get_state(self):
-        state = np.asarray([self.bot.lin_vel, self.bot.ang_vel,
-                            self.bot_x, self.bot_y, self.bot_dir,
-                            self.goal_x, self.goal_y], #self.dist_to_goal, self.delta_path_dir],
-                            dtype=float)
-        state = np.append(state, self.polar_lidar_frame[1, ::3])  # срез - в нейросеть идёт каждый второй
-        state = np.append(state, self.obst_marked_lidar_frame[::3])  # срез меток кадра
-        self.obst_marked_lidar_frame = -np.ones([self.beams_num], dtype=float)
+        self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
+        if self.is_obst:
+            self.delta_path_dir = self.temp_goal_dir
+        else:
+            delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
+            if delta_path_dir > 180.0:
+                delta_path_dir -= 360.0
+            elif delta_path_dir < -180.0:
+                delta_path_dir += 360.0
+            self.delta_path_dir = delta_path_dir
+        state = []
+
+        state.append(np.asarray([self.bot.lin_vel / 4.0, self.bot.ang_vel / 270.0]))
+        state.append(np.asarray([self.dist_to_goal, self.delta_path_dir]))
+        state.append(np.ones(self.beams_num) - self.polar_lidar_frame[1, :] / 3.0)
         return state
 
-    # # Обновление значения награды
-    # def update_reward(self):
-    #     if not
-
-    # # Запустить новый эпизод
+    # Запустить новый эпизод
     def reset(self):
-        self.bot_x = uniform(-0.5, 0)
-        self.bot_y = uniform(-0.5, 0.5)
-        self.bot_dir = uniform(-30.0, 30.0)
+        self.bot_x, self.bot_y = 0.0, 0.0
+        self.bot_dir = uniform(-1.0, 1.0) * 90.0
         self.bot.set_position(self.bot_x, self.bot_y, self.bot_dir)
-        self.goal_x = uniform(9.25, 9.75)
-        self.goal_y = uniform(-2.0, 2.0)
+
+        d = 15
+        phi = uniform(-5.0, 5.0)
+        self.goal_x, self.goal_y = d * cos(radians(phi)), d * sin(radians(phi))
         self.bot.goal_x = self.goal_x
         self.bot.goal_y = self.goal_y
         self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
-        self.closest = inf
-        self.delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
-        n_obj = int(uniform(4, 5))
+        self.prev_dist_to_goal = self.dist_to_goal
+        delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
+        if delta_path_dir > 180.0:
+            delta_path_dir -= 360.0
+        elif delta_path_dir < -180.0:
+            delta_path_dir += 360.0
+        self.delta_path_dir = delta_path_dir
+
+        n_obj = int(uniform(3, 5))
+
         self.scene = Environment()
-        ax[0].plot([10.5, -1.5, -1.5, 10.5, 10.5], [3.5, 3.5, -3.5, -3.5, 3.5], color='white')
-        x_offset = 8.0
-        # for i in range(n_obj):
-        #     s = uniform(0.3, 0.7)
-        #     x = x_offset - uniform(0.75, 1)
-        #     y = uniform(-2.5, 2.5)
-        #     lin_vel = uniform(-2.0, 2.0)
-        #     new_obj_nodes = np.asarray([[x - s / 2, x + s / 2, x + s / 2, x - s / 2, x - s / 2],
-        #                                 [y + s / 2, y + s / 2, y - s / 2, y - s / 2, y + s / 2]], dtype=float)
-        #     self.scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=self.bot.radius, movable=True)
-        #     x_offset = x
+        ax[0].plot([16, -1, -1, 16, 16], [5, 5, -5, -5, 5], color='white')
+        x_offset = 15.0
+        for i in range(n_obj):
+            s = uniform(0.2, 0.75)
+            x = x_offset - uniform(2.5, 3.0)
+            y = uniform(-3.0, 3.0)
+            lin_vel = uniform(-2.0, 2.0)
+            new_obj_nodes = np.asarray([[x - s / 2, x + s / 2, x + s / 2, x - s / 2, x - s / 2],
+                                        [y + s / 2, y + s / 2, y - s / 2, y - s / 2, y + s / 2]], dtype=float)
+            self.scene.add_object(new_obj_nodes, lin_vel=lin_vel, agent_radius=self.bot.radius, movable=True)
+            x_offset = x
 
         self.cart_lidar_frame, self.polar_lidar_frame = \
             get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
 
-        # self.state = np.zeros([1, self.beams_num+7], dtype=float)
-        self.reward = 0.0
+        # TODO: ВОТ ЗДЕСЬ МЫ ПРОВЕРЯЕМ НАЛИЧИЕ ПРЕПЯТСТВИЯ И ИЗМЕНЯЕМ ЛИНЕЙНУЮ СКОРОСТЬ
+        _ = self.check_obstacle()
+        self.total_reward = 0.0
 
         self.bot.terminated = False
         self.bot.goal_reached = False
 
-        w = degrees(self.bot.LIN_V_MAX * 2 * sin(radians(self.delta_path_dir)) / self.dist_to_goal)
-        self.bot.cmd_vel(self.bot.LIN_V_MAX, w)
+        # w = degrees(self.bot.LIN_V_MAX * 2 * sin(radians(self.delta_path_dir)) / self.dist_to_goal)
 
         return self.get_state()
 
     # Шаг симуляции
-    def step(self, lin_vel, ang_vel):
+    def step(self, ang_vel):
         global bot_img, bot_nose
+        reward = 0
 
-        self.bot.cmd_vel(lin_vel, ang_vel)
+        ang_vel *= 270.0
 
-        time.sleep(1/self.fps)
+        self.bot.cmd_vel(self.bot.lin_vel, ang_vel)
 
-        goal = [ax[0].scatter([self.goal_x], [self.goal_y], marker='*', s=100, c='green')]
+        if watch:
+            goal = [ax[0].scatter([self.goal_x], [self.goal_y], marker='*', s=100, c='green')]
 
-        # self.bot_x, self.bot_y, self.bot_dir = self.bot.goal_reached_check(self.goal_x, self.goal_y, threshold=0.05)
         self.bot_x, self.bot_y, self.bot_dir = self.bot.get_current_position()
-        # if self.bot.goal_reached:
-        #     self.reward += 10000
-        #     return self.get_state(), self.reward, True
+        self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
+        delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
+        if delta_path_dir > 180.0:
+            delta_path_dir -= 360.0
+        elif delta_path_dir < -180.0:
+            delta_path_dir += 360.0
+        self.delta_path_dir = delta_path_dir
 
         plots = []
         if self.scene.objects:
@@ -125,117 +147,17 @@ class Process:
                 else:
                     ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
 
-        # if self.bot.terminated:
-        #     # self.reward -= 100
-        #     if plots:
-        #         for plot in plots:
-        #             plot.remove()
-        #     goal[0].remove()
-        #     return self.get_state(), self.reward, True
+        if self.bot.terminated:
+            reward -= 25
+            if plots:
+                for plot in plots:
+                    plot.remove()
+            goal[0].remove()
+            self.total_reward += reward
+            return self.get_state(), self.total_reward, reward, True
 
-        bot_img = plt.Circle((self.bot_x, self.bot_y), self.bot.radius, color='gray')
-        bot_nose = plt.Rectangle((self.bot_x + 0.01 * sin(radians(self.bot_dir)),
-                                  self.bot_y - 0.01 * sin(radians(self.bot_dir))),
-                                 self.bot.radius, 0.02,
-                                 angle=self.bot_dir, rotation_point='xy', color='black')
-
-        ax[0].add_patch(bot_img)
-        ax[0].add_patch(bot_nose)
-
-        ax[1].clear()
-
-        self.cart_lidar_frame, self.polar_lidar_frame = \
-            get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
-
-        obstacles, obst_idxs, vect_obstacles = self.analyze()
-        for obst in obst_idxs:
-            self.obst_marked_lidar_frame[obst] = 1.0
-
-        # ось лидара
-        ax[1].scatter([0.0], [0.0], s=10, color='black')
-
-        # серые точки кадра
-        ax[1].scatter(self.cart_lidar_frame[0, ::2], self.cart_lidar_frame[1, ::2], s=4, marker='o', color='gray')
-
-        # # цветные точки после кластеризации
-        # lidar_ax.scatter(frame[0, :], frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
-
-        if obst_idxs:
-            for obst in obst_idxs:
-                ax[1].scatter(self.cart_lidar_frame[0, obst], self.cart_lidar_frame[1, obst],
-                              s=4, marker='o', color='red')
-
-        if vect_obstacles:
-            for obst in vect_obstacles:
-                for i in range(obst.shape[1] - 1):
-                    ax[1].plot([obst[0, i], obst[0, i + 1]], [obst[1, i], obst[1, i + 1]],
-                                  linewidth=1.5, color='magenta')
-
-        plt.draw()
-        plt.pause(1 / self.fps)
-
-        if plots:
-            for plot in plots:
-                plot.remove()
-
-        bot_img.remove()
-        bot_nose.remove()
-        goal[0].remove()
-
-        if not self.bot.goal_reached:
-            self.delta_path_dir = abs(degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir)
-            self.dist_to_goal = sqrt((self.goal_x - self.bot_x) ** 2 + (self.goal_y - self.bot_y) ** 2)
-            if self.dist_to_goal < self.closest:
-                self.closest = self.dist_to_goal
-
-            self.reward -= self.dist_to_goal ** 2
-            if self.bot.terminated:
-                if self.closest < 2:
-                    if self.closest < 1:
-                        self.reward += (1 - self.closest) * 100000
-                    else:
-                        self.reward += (((2 - self.closest) ** 2) * 100000)
-                else:
-                    self.reward -= 100000
-                # self.reward -= (10000 * self.dist_to_goal ** 2 + 10000)
-
-        else:
-            self.reward += 200000
-
-
-        return self.get_state(), self.reward, self.bot.terminated or self.bot.goal_reached
-
-
-
-    # Движение из точки в точку
-    def p2p_motion(self, lin_vel):
-        global bot_img, bot_nose
-        self.bot.aligned = False
-
-        goal = [ax[0].scatter([self.goal_x], [self.goal_y], marker='*', s=100, c='green')]
-
-        while not self.bot.goal_reached:
-            self.bot_x, self.bot_y, self.bot_dir = \
-                self.bot.move_to_pnt_check(self.goal_x, self.goal_y, lin_vel, self.fps)
-
-            plots = []
-            for obj in self.scene.objects:
-                if not obj.movable:
-                    ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
-                else:
-                    plot, = ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='red')
-                    plots.append(plot)
-                    obj.transform(1 / self.fps)
-                    if obj.check_agent_collision(self.bot):
-                        break
-
-            if self.bot.terminated:
-                if plots:
-                    for plot in plots:
-                        plot.remove()
-                break
-
-            bot_img = plt.Circle((self.bot_x, self.bot_y), self.bot.radius, color='grey')
+        if watch:
+            bot_img = plt.Circle((self.bot_x, self.bot_y), self.bot.radius, color='gray')
             bot_nose = plt.Rectangle((self.bot_x + 0.01 * sin(radians(self.bot_dir)),
                                       self.bot_y - 0.01 * sin(radians(self.bot_dir))),
                                      self.bot.radius, 0.02,
@@ -246,190 +168,23 @@ class Process:
 
             ax[1].clear()
 
-            self.cart_lidar_frame, self.polar_lidar_frame = \
-                get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
+        self.cart_lidar_frame, self.polar_lidar_frame = \
+            get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
 
-            # # лучи лидара
-            # for i in range(frame.shape[1]):
-            #     lidar_ax.plot([0.0, frame[0, i]], [0.0, frame[1, i]],
-            #                   linewidth=0.1, color='red')
+        # TODO: ВОТ ЗДЕСЬ МЫ ПРОВЕРЯЕМ НАЛИЧИЕ ПРЕПЯТСТВИЯ И ИЗМЕНЯЕМ ЛИНЕЙНУЮ СКОРОСТЬ
+        count_pts = self.check_obstacle()
+        reward -= 0.01 * count_pts
 
-            obstacles, obst_idxs, vect_obstacles = self.analyze()
+        current_frame = np.ones(self.beams_num) - self.polar_lidar_frame[1, :] / 5
 
+        if watch:
             # ось лидара
-            ax[1].scatter([0.0], [0.0], s=10, color='red')
+            ax[1].scatter([0.0], [0.0], s=10, color='black')
 
             # серые точки кадра
-            ax[1].scatter(self.cart_lidar_frame[0, ::3], self.cart_lidar_frame[1, ::3], s=4, marker='o', color='gray')
+            ax[1].scatter(self.cart_lidar_frame[0, ::2], self.cart_lidar_frame[1, ::2], s=4, marker='o', color='gray')
 
-            # # цветные точки после кластеризации
-            # lidar_ax.scatter(frame[0, :], frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
-
-            if obst_idxs:
-                for obst in obst_idxs:
-                    ax[1].scatter(self.cart_lidar_frame[0, obst], self.cart_lidar_frame[1, obst],
-                                  s=4, marker='o', color='red')
-
-            if vect_obstacles:
-                for obst in vect_obstacles:
-                    for i in range(obst.shape[1]-1):
-                        ax[1].plot([obst[0, i], obst[0, i + 1]], [obst[1, i], obst[1, i + 1]],
-                                    linewidth=1.5, color='magenta')
-
-            plt.draw()
-            plt.pause(1/self.fps)
-
-            if plots:
-                for plot in plots:
-                    plot.remove()
-
-            bot_img.remove()
-            bot_nose.remove()
-
-        goal[0].remove()
-        self.bot.goal_reached = False
-
-    # # Движение по команде скорости
-    # def execute_cmd_vel(self, lin_vel, ang_vel):
-    #     global bot_img, bot_nose
-    #
-    #     self.bot.cmd_vel(lin_vel, ang_vel)
-    #
-    #     goal = [ax.scatter([self.goal_x], [self.goal_y], marker='*', s=100, c='green')]
-    #
-    #     t0 = time.time()
-    #     while time.time() - t0 < 1:
-    #         self.bot_x, self.bot_y, self.bot_dir = self.bot.get_current_position()
-    #         # ax.scatter([c_x], [c_y], s=0.1, c='cyan')
-    #
-    #         plots = []
-    #         for obj in self.scene.objects:
-    #             if not obj.movable:
-    #                 ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
-    #             else:
-    #                 plot, = ax.plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='grey')
-    #                 plots.append(plot)
-    #                 obj.transform(1 / self.fps)
-    #                 if obj.check_agent_collision(self.bot):
-    #                     break
-    #
-    #         if self.bot.terminated:
-    #             if plots:
-    #                 for plot in plots:
-    #                     plot.remove()
-    #             break
-    #
-    #         bot_img = plt.Circle((self.bot_x, self.bot_y), self.bot.radius, color='r')
-    #         bot_nose = plt.Rectangle((self.bot_x + 0.01 * sin(radians(self.bot_dir)),
-    #                                   self.bot_y - 0.01 * sin(radians(self.bot_dir))),
-    #                                  self.bot.radius, 0.02,
-    #                                  angle=self.bot_dir, rotation_point='xy', color='black')
-    #
-    #         ax.add_patch(bot_img)
-    #         ax.add_patch(bot_nose)
-    #
-    #         lidar_ax.clear()
-    #
-    #         self.cart_lidar_frame, self.polar_lidar_frame = \
-    #             get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
-    #
-    #         vect_obstacles = self.analyze()
-    #
-    #         # ось лидара
-    #         lidar_ax.scatter([0.0], [0.0], s=10, color='red')
-    #
-    #         # серые точки кадра
-    #         lidar_ax.scatter(self.cart_lidar_frame[0, :], self.cart_lidar_frame[1, :], s=4, marker='o', color='gray')
-    #
-    #         # # цветные точки после кластеризации
-    #         # lidar_ax.scatter(frame[0, :], frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
-    #
-    #         if vect_obstacles:
-    #             for obst in vect_obstacles:
-    #                 for i in range(obst.shape[1] - 1):
-    #                     lidar_ax.plot([obst[0, i], obst[0, i + 1]], [obst[1, i], obst[1, i + 1]],
-    #                                   linewidth=1.5, color='magenta')
-    #
-    #         plt.draw()
-    #         plt.pause(1/self.fps)
-    #
-    #         if plots:
-    #             for plot in plots:
-    #                 plot.remove()
-    #
-    #         bot_img.remove()
-    #         bot_nose.remove()
-    #
-    #     goal[0].remove()
-
-    def analyze(self):
-        clustered = maintain_frame_clustering(self.cart_lidar_frame, eps=0.4)
-        objects, obj_idxs, idxs_lst = get_surrounding_objects(self.cart_lidar_frame, clustered)
-        # objects - отдельные объекты в виде декартовых координат
-        # obj_idxs - срезы индексов на кадре для каждого отдельного объекта, в т.ч. шумов
-        # idxs_lst - индексы элементов списка idxs, не являющихся шумом (индексы объектов, соответствующих objects)
-        obstacles, obst_idxs = detect_unfamiliar_objects(self.map_from_file, self.bot_x, self.bot_y, self.bot_dir,
-                                                        objects, obj_idxs, idxs_lst, threshold=0.1)
-        # vect_obstacles = get_vectorized_obstacles(obstacles)
-
-        vect_obstacles = []
-
-        return obstacles, obst_idxs, vect_obstacles
-
-    def wait_for_assignment(self):
-        global bot_img, bot_nose
-        self.bot_x, self.bot_y, self.bot_dir = self.bot.get_current_position()
-
-        print('Waiting for assignment')
-
-        ax[0].add_patch(bot_img)
-        ax[0].add_patch(bot_nose)
-
-        assigned = False
-
-        t0 = time.time()
-
-        while not assigned:
-            plots = []
-            for obj in self.scene.objects:
-                if not obj.movable:
-                    ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='black', linewidth=4)
-                else:
-                    plot, = ax[0].plot(obj.nodes_coords[0, :], obj.nodes_coords[1, :], color='red')
-                    plots.append(plot)
-                    obj.transform(1 / self.fps)
-
-            ax[1].clear()
-            self.cart_lidar_frame, self.polar_lidar_frame = \
-                get_lidar_frame(self.bot_x, self.bot_y, self.bot_dir, self.scene.objects, self.beams_num)
-
-            # лучи лидара
-            # for i in range(cart_lidar_frame.shape[1]):
-            #     lidar_ax.plot([0.0, cart_lidar_frame[0, i]], [0.0, cart_lidar_frame[1, i]],
-            #                   linewidth=0.1, color='red')
-
-            obstacles, obst_idxs, vect_obstacles = self.analyze()
-
-            # ось лидара
-            ax[1].scatter([0.0], [0.0], s=10, color='red')
-
-            # серые точки кадра
-            ax[1].scatter(self.cart_lidar_frame[0, :], self.cart_lidar_frame[1, :], s=4, marker='o', color='gray')
-
-            # # цветные точки после кластеризации
-            # lidar_ax.scatter(cart_lidar_frame[0, :], cart_lidar_frame[1, :], s=1, c=clustered.labels_, cmap='tab10')
-
-            if obst_idxs:
-                for obst in obst_idxs:
-                    ax[1].scatter(self.cart_lidar_frame[0, obst], self.cart_lidar_frame[1, obst],
-                                  s=4, marker='o', color='red')
-
-            if vect_obstacles:
-                for obst in vect_obstacles:
-                    for i in range(obst.shape[1] - 1):
-                        ax[1].plot([obst[0, i], obst[0, i + 1]], [obst[1, i], obst[1, i + 1]],
-                                      linewidth=1.5, color='magenta')
-
+        if watch:
             plt.draw()
             plt.pause(1 / self.fps)
 
@@ -437,48 +192,176 @@ class Process:
                 for plot in plots:
                     plot.remove()
 
-            if time.time() - t0 > 0.1:
-                assigned = True
-                ax[0].clear()
+            bot_img.remove()
+            bot_nose.remove()
+            goal[0].remove()
 
-            # time.sleep(1/fps)
+        else:
+            time.sleep(1/self.fps)
 
-    def execute_random_task(self):
-        self.reset()
-        v = 2
-        d = self.dist_to_goal
-        d_dir = self.delta_path_dir
-        w = degrees(v * 2 * sin(radians(d_dir)) / d)
-        # cmd_vel task
-        c = 0
-        for j in range(120):
-            self.step(v, w)
-            c += 1
-            if self.bot.terminated or self.bot.goal_reached:
-                break
-        print(c)
+        if not self.bot.goal_reached:
+            delta_dist = self.prev_dist_to_goal - self.dist_to_goal
+            if delta_dist > 0:
+                k_d = 2.5
+            else:
+                k_d = 4.0
+            reward += k_d * delta_dist  # награда/штраф за изменение расстояния до цели
 
-        # self.p2p_motion(2.0)
+            reward -= 1.0 - self.bot.lin_vel / self.bot.LIN_V_MAX
 
-        self.wait_for_assignment()
-        self.bot.terminated = False
+            reward -= 0.01 * abs(self.delta_path_dir)
+
+            close = (current_frame[:] > 0.8).sum()
+            reward -= 0.05 * close
+
+            if self.bot.terminated:
+                reward -= 25.0  # штраф за столкновение
+        else:
+            reward += 25.0  # награда за достижение цели
+
+        self.total_reward += reward
+
+        self.prev_dist_to_goal = self.dist_to_goal
+
+        return self.get_state(), self.total_reward, reward, self.bot.terminated or self.bot.goal_reached
+
+    # Проверка препятствий по направлению взгляда агента
+    def check_obstacle(self):
+        closest_front = 2.5
+        closest_front_ang = 0.0
+        closest_total = 3.0
+        closest_total_ang = 0.0
+        count = 0
+        self.is_obst = False
+        is_front = False
+        for ang, dist in zip(self.polar_lidar_frame[0], self.polar_lidar_frame[1]):
+            if dist < 3.0:
+                self.is_obst = True
+                if abs(dist * cos(ang)) < 0.5:
+                    count += 1
+                    d = dist * sin(ang) - 0.5
+                    if d < closest_front:
+                        closest_front = d
+                        closest_front_ang = ang
+                        is_front = True
+                if dist < closest_total:
+                    closest_total_ang = ang
+
+        if abs(degrees(closest_front_ang) - 90.0) > 75.0:
+            lin_vel = self.bot.LIN_V_MAX
+        else:
+            lin_vel = (closest_front / 2.5) * self.bot.LIN_V_MAX
+        self.bot.lin_vel = lin_vel
+
+        if self.is_obst:
+            if is_front:
+                delta_path_dir = degrees(atan2(self.goal_y - self.bot_y, self.goal_x - self.bot_x)) - self.bot_dir
+                if delta_path_dir > 180.0:
+                    delta_path_dir -= 360.0
+                elif delta_path_dir < -180.0:
+                    delta_path_dir += 360.0
+                self.temp_goal_dir = 90.0 * sign(cos(closest_total_ang))
+                sm = delta_path_dir - self.temp_goal_dir
+                if sm > 120.0 or sm < -120.0:
+                    self.temp_goal_dir *= -1
+
+                # TODO: надо рассмотреть краевые углы препятствия перед носом.
+                #  Также стоит учесть направление к цели /
+
+            else:
+                self.temp_goal_dir = self.delta_path_dir + degrees(closest_total_ang) + 90.0 * sign(cos(closest_total_ang)) - 90.0
+
+        return count
 
 
-# vis = Visualizer()
-# vis = Visualizer(see_scene=False, see_lidar=False)
 
-# scene = Environment()
-# new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [2.25, 2.25, 1.75, 1.75, 2.25]], dtype=float)
-# scene.add_object(new_object, lin_vel=-1.0, ang_vel=0.5, dir=-pi, movable=True)
-#
-# new_object = np.asarray([[-0.25, 0.25, 0.25, -0.25, -0.25], [-2.25, -2.25, -1.75, -1.75, -2.25]], dtype=float)
-# scene.add_object(new_object, lin_vel=1.0, ang_vel=0.5, dir=0.0, movable=True)
+
 
 fig, ax = plt.subplots(1, 2)
 ax[0].set_aspect('equal')
 ax[1].set_aspect('equal')
 
 process = Process()
+
+
+x0, y0, dir0 = process.bot.get_current_position()
+bot_img = plt.Circle((x0, y0), process.bot.radius, color='gray')
+bot_nose = plt.Rectangle((x0 + 0.01 * sin(radians(dir0)),
+                          y0 - 0.01 * sin(radians(dir0))),
+                         process.bot.radius, 0.02,
+                         angle=dir0, rotation_point='xy', color='black')
+
+watch = True
+
+# policy_net = Policy(3)
+value_net = Value(3)
+policy_net = PolicyNew(128)
+
+policy_states = torch.load(r'C:\Users\User\PycharmProjects\botMaster\Best\var_dirs60-60_dist3-5.pth')
+policy_net.load_state_dict(policy_states)
+
+e_p = 3  # число эпох для оптимизации политики П
+e_v = 3  # число эпох для оптимизации полезности V
+e_d = 2  # число эпох дистилляции
+total_episodes = 100
+test_period = 1
+
+avg_rewards = []
+checkpoints = []
+loss = []
+
+replay = False
+
+count_replay = 0
+
+for ep in range(1, total_episodes+1):
+
+    # Ранее вспомогательный в процессе обучения код
+
+    # torch.save(policy_net.state_dict(),
+    #            r'C:\Users\User\PycharmProjects\botMaster\PPP\P_S_' + '_EP_' + str(ep) + '.pth')
+    # train_reward = RL.train(process, policy_net, value_net, e_p, e_v, e_d)
+    # avg_rewards.append(train_reward)
+    # checkpoints.append(ep)
+
+
+    if ep % test_period == 0:
+        print("TESTING")
+        success_rate, success, avg_reward = RL.test(process, policy_net, value_net)
+        avg_rewards.append(avg_reward)
+        checkpoints.append(ep)
+        print('Success', success_rate, 'at episode', ep, 'with average reward', avg_reward)
+
+        # Ранее вспомогательный в процессе тестирования код
+
+        # print('Episode', ep, 'with average reward', avg_reward)
+        # torch.save(policy_net.state_dict(),
+        #            r'C:\Users\User\PycharmProjects\botMaster\PPP\P_S_' + str(success) + '_EP_' + str(ep) + '.pth')
+        #
+        # # if avg_reward < -50.0:
+        # #     replay = True
+        # #     if count_replay == max_replay:
+        # #         replay = False
+        # #         count_replay = 0
+        # #     else:
+        # #         count_replay += 1
+        # #         print("REPLAYING", count_replay)
+        # # else:
+        # #     replay = False
+        # #     torch.save(policy_net.state_dict(),
+        # #                r'C:\Users\User\PycharmProjects\botMaster\PPP\P_S_' + '_EP_' + str(ep) + '.pth')
+        # #     count_replay = 0
+        #
+        # torch.save(policy_net.state_dict(),
+        #            r'C:\Users\User\PycharmProjects\botMaster\PPP\P_S_' + str(success) + '_EP_' + str(ep) + '.pth')
+
+
+
+# Не используемый в последствии код
+
+# _, r_ax = plt.subplots()
+# r_ax.plot(checkpoints, avg_rewards)
+# plt.show()
 
 
 # # Движение по карте с незнакомыми препятствиями
@@ -494,106 +377,23 @@ process = Process()
 # # bot = Bot(discr_dt)
 
 
-x0, y0, dir0 = process.bot.get_current_position()
-bot_img = plt.Circle((x0, y0), process.bot.radius, color='gray')
-bot_nose = plt.Rectangle((x0 + 0.01 * sin(radians(dir0)),
-                          y0 - 0.01 * sin(radians(dir0))),
-                         process.bot.radius, 0.02,
-                         angle=dir0, rotation_point='xy', color='black')
-
-
-# policy = Policy(77, 2)
-policy = torch.load('policy.pkl')
-policy.eval()
-device = torch.device('cuda')
-
-# policy.to(device)
-
-rewards = []
-for i in range(100):
-    episode_reward = train(process, policy)
-    rewards.append(episode_reward)
-    print(f'Episode {i}: Reward {episode_reward}')
-    if not i % 100 and i > 0:
-        torch.save(policy, 'waypoint_policy.pkl')
-        print('Checkpoint')
-
-# policy.to('cpu')
-torch.save(policy, 'policy.pkl')
-
-# for ep in range(50):
-#     process.execute_random_task()
-
-# for i in range(len(rewards) - 1):
-#     r_ax.plot([rewards[i], rewards[i+1]])
-_, r_ax = plt.subplots()
-r_ax.plot(rewards)
-
-# # p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
+# determined_policy = PolicyNew(128)
+# policy_states = torch.load(r'C:\Users\User\PycharmProjects\botMaster\Best\var_dirs60-60_dist3-5.pth')
+# determined_policy.load_state_dict(policy_states)
 #
+# w1, b1, w2, b2, w3, b3, w4, b4, w5, b5, w6, b6 = determined_policy.get_params()
 #
-# p2p_motion(4, 4, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
-# wait_for_assignment(bot)
+# policy_net.set_param(w1, b1, w2, b2, w3, b3, w4, b4, w5, b5, w6, b6)
 
 
+# policy_states = torch.load(r'C:\Users\User\PycharmProjects\botMaster\Best\var_dirs60-60_dist3-5.pth')
+# policy_states = torch.load(r'C:\Users\User\PycharmProjects\botMaster\Best\straight_5_05.pth')
+# policy_states = torch.load(r'C:\Users\User\PchyarmProjects\botMaster\Best\var_dirs_5_05.pth')
+# policy_states = torch.load(r'C:\Users\User\PycharmProjects\botMaster\Best\var_dirs60-60_dist3-5.pth')
 
+# policy_net.load_state_dict(policy_states)
 
+# value_states = torch.load(r'C:\Users\User\PycharmProjects\botMaster\VVV\V_S_23_EP_80.pth')
+# value_net.load_state_dict(value_states)
 
-
-# ==================================== ПРОИЗВОЛЬНАЯ КАРТА ===========================================
-
-
-# # ДВИЖЕНИЕ С ИМЕЮЩЕЙСЯ КАРТОЙ, ОТРАБОТКА ТРАЕКТОРИИ
-# # Добавление незакартированных препятствий
-# scene_contours.append(np.asarray([[-4, -4, -3, -3, -4], [4, 3, 3, 4, 4]], dtype=float))
-# scene_contours.append(np.asarray([[0, -0.5, -0.5, 0, 0], [4, 4, 3.5, 3.5, 4]], dtype=float))
-# scene_contours.append(np.asarray([[-4, -4.5, -4.5, -4, -4], [0, 0, 0.5, 0.5, 0]], dtype=float))
-# scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [3, 3, 4, 4, 3]], dtype=float))
-# scene_contours.append(np.asarray([[4.4, 4.9, 4.9, 4.4, 4.4], [-3, -3, -4, -4, -3]], dtype=float))
-# scene_contours.append(np.asarray([[4, 3.5, 3.5, 4, 4], [-4, -4, -4.5, -4.5, -4]], dtype=float))
-# scene_contours.append(np.asarray([[-1, 0, 0.5, -1], [-4.7, -4.3, -4.5, -4.7]], dtype=float))
-
-
-# # Движение по карте с незнакомыми препятствиями
-# map_from_file = read_map('map.csv')
-# beams_num = 300
-# motion_lin_vel = 2
-# sim_lin_vel = 2 * motion_lin_vel
-
-# p2p_motion(4, 0, 0, motion_lin_vel, fps, beams_num=beams_num, mapping=False)
-
-# p2p_motion(-2, 4, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
-# p2p_motion(-3, -4.2, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
-# p2p_motion(4, -3, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
-# p2p_motion(3.8, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
-# p2p_motion(0, 0, 0, sim_lin_vel, scene, bot, fps, beams_num=beams_num)
-# wait_for_assignment(bot)
-
-
-
-# ПОКАЗАТЬ КАДР В НЕКОТОРОЙ ПОЗИЦИИ РОБОТА
-# bot.x = 3
-# bot.y = 1
-# bot.dir = -90
-# get_single_frame()
-
-
-
-# # map_contours = get_map_contours(map_from_file, map_clustered)
-# # for mp_cnt in map_contours:
-# #     nodes = np.zeros([2, mp_cnt.shape[1]])
-# #     Nlines = getLines(nodes, mp_cnt, mp_cnt.shape[1], tolerance=0.1)
-# #     for i in range(Nlines):
-# #         map_ax.plot([nodes[0, i], nodes[0, i + 1]], [nodes[1, i], nodes[1, i + 1]], linewidth=2)
-
-# # # # Это больше для работы с ROI нужно было
-# # # # for fr in map:
-# # # #     map_ax.scatter(fr[0, :], fr[1, :], s=1, marker='o', color='gray')
-# # # map_ax.scatter(map_from_file[0, :], map_from_file[1, :], s=1, marker='o', color='gray')
-# # # # for obst in obstacles:
-# # # #     map_ax.scatter(obst[0, :], obst[1, :], s=5, marker='o', color='red')
-# # # i = 2
-# # # map_ax.scatter(obstacles[i][0, :], obstacles[i][1, :], s=5, marker='o', color='red')
-# # # # map_ax.scatter(objects[0, :], objects[1, :], s=1, c=clustered.labels_, cmap='tab10')
-
-plt.show()
+# print(RL.test(process, policy_net, value_net))

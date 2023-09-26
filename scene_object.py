@@ -21,8 +21,7 @@ class SceneObject:
         self.nodes_coords[2, :] = 1.0
         self.N = self.nodes_coords.shape[1] - 1
 
-        # ТОЛЬКО ДЛЯ ПРАВИЛЬНЫХ МНОГОУГОЛЬНИКОВ (сейчас работаем с квадратами),
-        # потом можно инициализировать по координатам центра, числу и длине сторон
+        # ТОЛЬКО ДЛЯ ПРАВИЛЬНЫХ МНОГОУГОЛЬНИКОВ
         self.c_x, self.c_y = np.mean(self.nodes_coords[0, :self.N]), np.mean(self.nodes_coords[1, :self.N])
         self.a = sqrt((self.nodes_coords[0, 0] - self.nodes_coords[0, 1]) ** 2 +
                       (self.nodes_coords[1, 0] - self.nodes_coords[1, 1]) ** 2)
@@ -41,21 +40,21 @@ class SceneObject:
         # self.c_x += self.lin_vel * dt
         self.c_y += self.lin_vel * dt
         if self.lin_vel > 0:
-            if not np.min(self.nodes_coords[1, :]) < 2.5:
-                self.nodes_coords[1, :] -= 5.75
+            if not np.min(self.nodes_coords[1, :]) < 3.0:
+                self.nodes_coords[1, :] -= 7.5
                 # self.c_x -= 5.75
-                self.c_y -= 5.75
+                self.c_y -= 7.5
         else:
-            if not np.max(self.nodes_coords[1, :]) > -2.5:
-                self.nodes_coords[1, :] += 5.75
+            if not np.max(self.nodes_coords[1, :]) > -3.0:
+                self.nodes_coords[1, :] += 7.5
                 # self.c_x += 5.75
-                self.c_y += 5.75
+                self.c_y += 7.5
 
     # Проверка на столкновение с объектом
     def check_agent_collision(self, bot):
         bot_c_x, bot_c_y, _ = bot.get_current_position()
         if sqrt((bot_c_x - self.c_x) ** 2 + (bot_c_y - self.c_y) ** 2) < self.unsafe_radius:
             bot.terminated = True
-            print('TERMINATED: Obstacle collision')
+            # print('TERMINATED: Obstacle collision')
         return bot.terminated
 

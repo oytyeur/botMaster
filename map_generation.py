@@ -191,9 +191,10 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100, ini
     # TODO: ПОЧЕМУ ТРОИТ ПРИ ВЫЗОВЕ В ОТДЕЛЬНОМ ПОТОКЕ
     # ptp_motion_thread = threading.Thread(target=bot.move_to_pnt, args=(x_goal, y_goal, dir_goal, lin_vel))
     # ptp_motion_thread.start()
+
     t0 = time.time()
     while not bot.goal_reached:
-        c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, dir_goal, lin_vel, fps)
+        c_x, c_y, c_dir = bot.move_to_pnt_check(x_goal, y_goal, lin_vel, fps)
         bot_img.remove()
         bot_nose.remove()
         bot_img = plt.Circle((c_x, c_y), bot.radius, color='r')
@@ -273,12 +274,12 @@ def p2p_motion(x_goal, y_goal, dir_goal, lin_vel, scene, fps, beams_num=100, ini
 
 def generate_map(bot, scene, fps=10):
     # ПРЕДВАРИТЕЛЬНОЕ КАРТИРОВАНИЕ
-    mapping_lin_vel = 2
+    mapping_lin_vel = 1
     sim_lin_vel = 2 * mapping_lin_vel
 
-    p2p_motion(5, -2, 0, sim_lin_vel, scene, fps, initial=True)
-    p2p_motion(8, 0, 0, sim_lin_vel, scene, fps)
-    p2p_motion(5, 2, 0, sim_lin_vel, scene, fps)
+    p2p_motion(3, -2, 0, sim_lin_vel, scene, fps, initial=True)
+    p2p_motion(3, 0, 0, sim_lin_vel, scene, fps)
+    p2p_motion(2, 2, 0, sim_lin_vel, scene, fps)
     p2p_motion(0, 0, 0, sim_lin_vel, scene, fps)
 
     # p2p_motion(-1.5, 4.5, 0, sim_lin_vel, scene, fps, initial=True)
@@ -291,9 +292,10 @@ def generate_map(bot, scene, fps=10):
 
 
 
-# # TODO: добить кластеризацию контуров и работать уже с полигональной картой
+# # # TODO: добить кластеризацию контуров и работать уже с полигональной картой
+# #
+# # # TODO: вынести константы в предварительное объявление
 #
-# # TODO: вынести константы в предвырительное объявление
 # map = []
 #
 # scene = Environment()
@@ -313,19 +315,19 @@ def generate_map(bot, scene, fps=10):
 # # ПРОИЗВЕСТИ КАРТИРОВАНИЕ
 # # contours = create_scene()
 # generate_map(bot, scene, fps=fps)
-#
-#
-# # # ПОКАЗАТЬ КАДР В НЕКОТОРОЙ ПОЗИЦИИ РОБОТА
-# # # bot.x = 3
-# # # bot.y = 1
-# # # bot.dir = -90
-# # # get_single_frame()
+
+
+# # ПОКАЗАТЬ КАДР В НЕКОТОРОЙ ПОЗИЦИИ РОБОТА
+# # bot.x = 3
+# # bot.y = 1
+# # bot.dir = -90
+# # get_single_frame()
 #
 #
 # # ПОКАЗАТЬ КАРТУ
 # map_from_file = read_map('map.csv')
 # vectorize_map(map_from_file)
-#
+# #
 # plt.show()
 
 
